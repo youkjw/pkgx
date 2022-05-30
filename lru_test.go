@@ -5,13 +5,40 @@ import (
 	"github.com/stretchr/testify/assert"
 	"sync"
 	"testing"
+	"time"
 )
 
-func TestLruMemory_Add(t *testing.T) {
-	lru, err := Lru("test")
-	if err != nil {
-		assert.Nil(t, err)
+func TestLruMemory_Init(t *testing.T) {
+	_, err := Lru("test",
+		WithSize(3),
+		WithInit(func(memory *lruMemory) error {
+			memory.Add("a", "test")
+			memory.Add("b", "test1")
+			memory.Add("c", "test2")
+			return nil
+		}),
+		WithInitInterval(5*time.Second),
+		WithFlush(func(key string, value interface{}) error {
+			fmt.Println(key, value)
+			return nil
+		}),
+		WithFlushInterval(5*time.Second),
+	)
+	assert.Nil(t, err)
+
+	tim := time.After(60 * time.Second)
+	for {
+		select {
+		case <-tim:
+			break
+		default:
+		}
 	}
+}
+
+func TestLruMemory_Add(t *testing.T) {
+	lru, err := Lru("test", WithSize(2))
+	assert.Nil(t, err)
 
 	lru.Add("a", "test")
 	val, ok := lru.Get("a")
@@ -26,13 +53,18 @@ func TestLruMemory_Add(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, val, "test1")
 	fmt.Println(val)
+
+	lru.Add("b", "test2")
+	lru.Add("c", "test3")
+	lru.Add("d", "test4")
+	lenght := lru.Len()
+	assert.Equal(t, lenght, 2)
+	fmt.Println(lenght)
 }
 
 func TestLruMemory_Get(t *testing.T) {
 	lru, err := Lru("test")
-	if err != nil {
-		assert.Nil(t, err)
-	}
+	assert.Nil(t, err)
 
 	lru.Add("a", "test")
 
@@ -55,9 +87,7 @@ func TestLruMemory_Get(t *testing.T) {
 
 func TestLruMemory_Take(t *testing.T) {
 	lru, err := Lru("test")
-	if err != nil {
-		assert.Nil(t, err)
-	}
+	assert.Nil(t, err)
 
 	var wait sync.WaitGroup
 	for i := 0; i < 20; i++ {
@@ -87,9 +117,7 @@ func TestLruMemory_Take(t *testing.T) {
 
 func TestLruMemory_Remove(t *testing.T) {
 	lru, err := Lru("test")
-	if err != nil {
-		assert.Nil(t, err)
-	}
+	assert.Nil(t, err)
 
 	lru.Add("a", "test")
 	val, ok := lru.Get("a")
@@ -107,9 +135,7 @@ func TestLruMemory_Remove(t *testing.T) {
 
 func TestLruMemory_Contains(t *testing.T) {
 	lru, err := Lru("test")
-	if err != nil {
-		assert.Nil(t, err)
-	}
+	assert.Nil(t, err)
 
 	lru.Add("a", "test")
 	ok := lru.Contains("a")
@@ -118,9 +144,7 @@ func TestLruMemory_Contains(t *testing.T) {
 
 func TestLruMemory_Keys(t *testing.T) {
 	lru, err := Lru("test")
-	if err != nil {
-		assert.Nil(t, err)
-	}
+	assert.Nil(t, err)
 
 	lru.Add("a", "test")
 	lru.Add("a", "test1")
@@ -132,4 +156,23 @@ func TestLruMemory_Keys(t *testing.T) {
 
 	keys := lru.Keys()
 	fmt.Println(keys)
+}
+
+func TestLruMemory_Range(t *testing.T) {
+	lru, err := Lru("test")
+	assert.Nil(t, err)
+
+	lru.Add("a", "test")
+	lru.Add("a", "test1")
+	lru.Add("b", "test")
+	lru.Add("c", "test")
+	lru.Add("d", "test")
+	lru.Add("e", "test")
+	lru.Add("f", "test")
+
+	err = lru.Range(func(key string, value interface{}) error {
+		fmt.Println(key, value)
+		return nil
+	})
+	assert.Nil(t, err)
 }

@@ -2,7 +2,6 @@ package memory
 
 import (
 	"container/list"
-	"errors"
 	"golang.org/x/sync/singleflight"
 	"sync"
 	"sync/atomic"
@@ -29,13 +28,15 @@ type LruCache interface {
 }
 
 type (
-	// LruOption defines the method to customize a LruMemory.
-	LruOption func(cache *LruMemory)
+	// LruOption defines the method to customize a lruMemory.
+	LruOption func(cache *lruMemory)
 
 	// handleFunc
 	handleFunc func(key string, value interface{}) error
+	// lruFunc
+	lruFunc func(memory *lruMemory) error
 
-	LruMemory struct {
+	lruMemory struct {
 		init bool
 
 		name    string
@@ -60,7 +61,7 @@ type (
 
 	initLru struct {
 		flag     int32
-		onInit   func()
+		onInit   lruFunc
 		interval time.Duration
 	}
 
@@ -72,45 +73,45 @@ type (
 )
 
 func WithSize(size int) LruOption {
-	return func(lru *LruMemory) {
+	return func(lru *lruMemory) {
 		lru.size = size
 	}
 }
 
-func WithInit(f func()) LruOption {
-	return func(lru *LruMemory) {
+func WithInit(f func(*lruMemory) error) LruOption {
+	return func(lru *lruMemory) {
 		lru.initLru.onInit = f
 	}
 }
 
 func WithOnRemove(f handleFunc) LruOption {
-	return func(lru *LruMemory) {
+	return func(lru *lruMemory) {
 		lru.onRemove = f
 	}
 }
 
 func WithFlush(f handleFunc) LruOption {
-	return func(lru *LruMemory) {
+	return func(lru *lruMemory) {
 		lru.flushLru.onFlush = f
 	}
 }
 
 func WithInitInterval(t time.Duration) LruOption {
-	return func(lru *LruMemory) {
+	return func(lru *lruMemory) {
 		lru.initLru.interval = t
 	}
 }
 
 func WithFlushInterval(t time.Duration) LruOption {
-	return func(lru *LruMemory) {
+	return func(lru *lruMemory) {
 		lru.flushLru.interval = t
 	}
 }
 
-func instanceLru(name string, opts ...LruOption) (*LruMemory, error) {
-	lru := &LruMemory{
+func instanceLru(name string, opts ...LruOption) (*lruMemory, error) {
+	lru := &lruMemory{
 		name:  name,
-		size:  1 * 1024,
+		size:  0,
 		queue: list.New(),
 		items: make(map[interface{}]*list.Element),
 		stat:  &CacheStat{},
@@ -120,25 +121,21 @@ func instanceLru(name string, opts ...LruOption) (*LruMemory, error) {
 		opt(lru)
 	}
 
-	if lru.size == 0 {
-		return nil, errors.New("must provide a positive size")
-	}
-
 	lru.start()
 	return lru, nil
 }
 
-func (c *LruMemory) start() {
+func (c *lruMemory) start() {
 	c.initCache()
 	c.flushCache()
 }
 
-func (c *LruMemory) Add(key string, value interface{}) bool {
+func (c *lruMemory) Add(key string, value interface{}) bool {
 	c.lock.Lock()
-	defer c.lock.Unlock()
 	if ent, ok := c.items[key]; ok {
 		ent.Value.(*entry).value = value
 		c.queue.MoveToFront(ent)
+		c.lock.Unlock()
 		return true
 	}
 
@@ -149,13 +146,14 @@ func (c *LruMemory) Add(key string, value interface{}) bool {
 	}
 	elem := c.queue.PushFront(ent)
 	c.items[key] = elem
-	if c.queue.Len() > c.size {
+	c.lock.Unlock()
+	if c.size > 0 && c.queue.Len() > c.size {
 		c.RemoveOldest()
 	}
 	return true
 }
 
-func (c *LruMemory) Get(key string) (value interface{}, ok bool) {
+func (c *lruMemory) Get(key string) (value interface{}, ok bool) {
 	ent, ok := c.doGet(key)
 	if ok {
 		c.stat.IncrementHit()
@@ -166,7 +164,7 @@ func (c *LruMemory) Get(key string) (value interface{}, ok bool) {
 	return ent.value, ok
 }
 
-func (c *LruMemory) doGet(key string) (*entry, bool) {
+func (c *lruMemory) doGet(key string) (*entry, bool) {
 	c.lock.RLock()
 	v, ok := c.items[key]
 	c.lock.RUnlock()
@@ -178,7 +176,7 @@ func (c *LruMemory) doGet(key string) (*entry, bool) {
 	return nil, false
 }
 
-func (c *LruMemory) Take(key string, f func() (interface{}, error)) (value interface{}, err error) {
+func (c *lruMemory) Take(key string, f func() (interface{}, error)) (value interface{}, err error) {
 	if val, ok := c.doGet(key); ok {
 		c.stat.IncrementHit()
 		return val.value, nil
@@ -211,7 +209,7 @@ func (c *LruMemory) Take(key string, f func() (interface{}, error)) (value inter
 	return value, err
 }
 
-func (c *LruMemory) GetOldest() (key string, value interface{}, ok bool) {
+func (c *lruMemory) GetOldest() (key string, value interface{}, ok bool) {
 	ent := c.queue.Back()
 	if ent != nil {
 		elems, exist := ent.Value.(*entry)
@@ -223,26 +221,28 @@ func (c *LruMemory) GetOldest() (key string, value interface{}, ok bool) {
 	return "", nil, false
 }
 
-func (c *LruMemory) Len() int {
+func (c *lruMemory) Len() int {
 	return c.queue.Len()
 }
 
-func (c *LruMemory) Remove(key string) bool {
+func (c *lruMemory) Remove(key string) bool {
 	c.lock.Lock()
-	defer c.lock.Unlock()
 	if elem, ok := c.items[key]; ok {
 		c.queue.Remove(elem)
 		delete(c.items, key)
 
 		ent := elem.Value.(*entry)
+		c.lock.Unlock()
 		if c.onRemove != nil {
 			_ = c.onRemove(ent.key.(string), ent.value)
 		}
+		return true
 	}
+	c.lock.Unlock()
 	return true
 }
 
-func (c *LruMemory) RemoveOldest() {
+func (c *lruMemory) RemoveOldest() {
 	ent := c.queue.Back()
 	if ent != nil {
 		elems := ent.Value.(*entry)
@@ -250,18 +250,18 @@ func (c *LruMemory) RemoveOldest() {
 	}
 }
 
-func (c *LruMemory) Contains(key string) (ok bool) {
+func (c *lruMemory) Contains(key string) (ok bool) {
 	c.lock.RLock()
 	defer c.lock.RLock()
 	_, ok = c.items[key]
 	return
 }
 
-func (c *LruMemory) Stat() *CacheStat {
+func (c *lruMemory) Stat() *CacheStat {
 	return c.stat
 }
 
-func (c *LruMemory) Keys() []string {
+func (c *lruMemory) Keys() []string {
 	keys := make([]string, 0, len(c.items))
 	_ = c.Range(func(key string, value interface{}) error {
 		keys = append(keys, key)
@@ -270,7 +270,7 @@ func (c *LruMemory) Keys() []string {
 	return keys
 }
 
-func (c *LruMemory) Range(f func(key string, value interface{}) error) error {
+func (c *lruMemory) Range(f func(key string, value interface{}) error) error {
 	for ent := c.queue.Back(); ent != nil; ent = ent.Prev() {
 		val := ent.Value.(*entry)
 		err := f(val.key.(string), val.value)
@@ -281,10 +281,10 @@ func (c *LruMemory) Range(f func(key string, value interface{}) error) error {
 	return nil
 }
 
-func (c *LruMemory) initCache() {
+func (c *lruMemory) initCache() {
 	if c.initLru.interval > 0 && c.initLru.onInit != nil {
 		if !c.init { // 防止多次初始化
-			c.initLru.onInit()
+			_ = c.initLru.onInit(c)
 			c.init = true
 		}
 
@@ -297,7 +297,7 @@ func (c *LruMemory) initCache() {
 			for {
 				select {
 				case <-t.C:
-					c.initLru.onInit()
+					_ = c.initLru.onInit(c)
 					atomic.StoreInt32(&c.initLru.flag, 0)
 				default:
 				}
@@ -306,7 +306,7 @@ func (c *LruMemory) initCache() {
 	}
 }
 
-func (c *LruMemory) flushCache() {
+func (c *lruMemory) flushCache() {
 	if c.flushLru.interval > 0 && c.flushLru.onFlush != nil {
 		if !atomic.CompareAndSwapInt32(&c.flushLru.flag, 0, 1) { //防止同时运行多个
 			return

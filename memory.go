@@ -25,10 +25,10 @@ var (
 	cacheMap = sync.Map{}
 )
 
-func Lru(name string, opts ...LruOption) (*LruMemory, error) {
+func Lru(name string, opts ...LruOption) (*lruMemory, error) {
 	if c, ok := cacheMap.Load(name); ok {
-		if _, ok = c.(*LruMemory); ok {
-			return c.(*LruMemory), nil
+		if _, ok = c.(*lruMemory); ok {
+			return c.(*lruMemory), nil
 		}
 		return nil, errors.New("memory already exists but not lru")
 	}
