@@ -42,8 +42,8 @@ func Close() {
 	cacheMap.Range(func(key, value interface{}) bool {
 		wait.Add(1)
 		go func(c Cache) {
+			defer wait.Done()
 			c.flushCache()
-			wait.Done()
 		}(value.(Cache))
 		return true
 	})
