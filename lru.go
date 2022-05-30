@@ -160,6 +160,7 @@ func (c *LruMemory) Get(key string) (value interface{}, ok bool) {
 		c.stat.IncrementHit()
 	} else {
 		c.stat.IncrementMiss()
+		return nil, false
 	}
 	return ent.value, ok
 }
@@ -179,14 +180,13 @@ func (c *LruMemory) doGet(key string) (*entry, bool) {
 func (c *LruMemory) Take(key string, f func() (interface{}, error)) (value interface{}, err error) {
 	if val, ok := c.doGet(key); ok {
 		c.stat.IncrementHit()
-		return val, nil
+		return val.value, nil
 	}
 
 	var task bool
 	value, err, _ = c.barrier.Do(key, func() (interface{}, error) {
 		if val, ok := c.doGet(key); ok {
-			c.stat.IncrementHit()
-			return val, nil
+			return val.value, nil
 		}
 
 		var val interface{}
