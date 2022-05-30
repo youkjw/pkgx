@@ -110,7 +110,7 @@ func WithFlushInterval(t time.Duration) LruOption {
 func instanceLru(name string, opts ...LruOption) (*LruMemory, error) {
 	lru := &LruMemory{
 		name:  name,
-		size:  10 * 1024,
+		size:  1 * 1024,
 		queue: list.New(),
 		items: make(map[interface{}]*list.Element),
 		stat:  &CacheStat{},
@@ -201,6 +201,12 @@ func (c *LruMemory) Take(key string, f func() (interface{}, error)) (value inter
 		return val, nil
 	})
 
+	if task {
+		c.stat.IncrementMiss()
+		return value, err
+	}
+
+	c.stat.IncrementHit()
 	return value, err
 }
 
