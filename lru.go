@@ -227,11 +227,11 @@ func (c *LruMemory) Len() int {
 }
 
 func (c *LruMemory) Remove(key string) bool {
-	c.lock.RLock()
-	defer c.lock.RUnlock()
+	c.lock.Lock()
+	defer c.lock.Unlock()
 	if elem, ok := c.items[key]; ok {
 		c.queue.Remove(elem)
-		delete(c.items, elem)
+		delete(c.items, key)
 
 		ent := elem.Value.(*entry)
 		if c.onRemove != nil {

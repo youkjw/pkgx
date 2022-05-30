@@ -10,7 +10,7 @@ import (
 func TestLruMemory_Add(t *testing.T) {
 	lru, err := Lru("test")
 	if err != nil {
-		fmt.Println(err)
+		assert.Nil(t, err)
 	}
 
 	lru.Add("a", "test")
@@ -23,7 +23,7 @@ func TestLruMemory_Add(t *testing.T) {
 func TestLruMemory_Get(t *testing.T) {
 	lru, err := Lru("test")
 	if err != nil {
-		fmt.Println(err)
+		assert.Nil(t, err)
 	}
 
 	lru.Add("a", "test")
@@ -48,7 +48,7 @@ func TestLruMemory_Get(t *testing.T) {
 func TestLruMemory_Take(t *testing.T) {
 	lru, err := Lru("test")
 	if err != nil {
-		fmt.Println(err)
+		assert.Nil(t, err)
 	}
 
 	var wait sync.WaitGroup
@@ -75,4 +75,24 @@ func TestLruMemory_Take(t *testing.T) {
 	//assert.True(t, ok)
 	//assert.Equal(t, val, "test")
 	//fmt.Println(val)
+}
+
+func TestLruMemory_Remove(t *testing.T) {
+	lru, err := Lru("test")
+	if err != nil {
+		assert.Nil(t, err)
+	}
+
+	lru.Add("a", "test")
+	val, ok := lru.Get("a")
+	assert.True(t, ok)
+	assert.Equal(t, val, "test")
+
+	ok = lru.Remove("a")
+	assert.True(t, ok)
+
+	val, ok = lru.Get("a")
+	fmt.Println(val, ok)
+	assert.False(t, ok)
+	assert.Nil(t, val)
 }
