@@ -340,7 +340,6 @@ func (c *lruMemory) Close() {
 	c.ctxCancel()
 	if c.flushLru.onFlush != nil {
 		_ = c.Range(c.flushLru.onFlush)
-		atomic.StoreInt32(&c.flushLru.flag, 0)
 	}
 }
 
