@@ -9,7 +9,7 @@ import (
 )
 
 func TestLruMemory_Init(t *testing.T) {
-	_, err := Lru("test",
+	lru, err := Lru("test",
 		WithSize(3),
 		WithInit(func(memory *lruMemory) error {
 			memory.Add("a", "test")
@@ -17,12 +17,16 @@ func TestLruMemory_Init(t *testing.T) {
 			memory.Add("c", "test2")
 			return nil
 		}),
-		WithInitInterval(5*time.Second),
+		WithInitInterval(10*time.Second),
 		WithFlush(func(key string, value interface{}) error {
 			fmt.Println(key, value)
 			return nil
 		}),
 		WithFlushInterval(5*time.Second),
+		WithOnRemove(func(key string, value interface{}) error {
+			fmt.Println(key, value)
+			return nil
+		}),
 	)
 	assert.Nil(t, err)
 
@@ -32,6 +36,7 @@ func TestLruMemory_Init(t *testing.T) {
 		case <-tim:
 			break
 		default:
+			lru.Remove("a")
 		}
 	}
 }
