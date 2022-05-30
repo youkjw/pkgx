@@ -17,7 +17,7 @@ type (
 		Remove(key string) bool
 		Len() int
 		Stat() *CacheStat
-		flushCache()
+		Close()
 	}
 )
 
@@ -43,7 +43,7 @@ func Close() {
 		wait.Add(1)
 		go func(c Cache) {
 			defer wait.Done()
-			c.flushCache()
+			c.Close()
 		}(value.(Cache))
 		return true
 	})

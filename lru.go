@@ -2,6 +2,7 @@ package memory
 
 import (
 	"container/list"
+	"context"
 	"golang.org/x/sync/singleflight"
 	"sync"
 	"sync/atomic"
@@ -25,6 +26,8 @@ type LruCache interface {
 	Keys() []string
 
 	Range(f func(key string, value interface{}) error) error
+
+	flushCache()
 }
 
 type (
@@ -39,14 +42,16 @@ type (
 	lruMemory struct {
 		init bool
 
-		name    string
-		lock    sync.RWMutex
-		atomic  atomic.Value
-		barrier singleflight.Group
-		size    int
-		queue   *list.List
-		items   map[interface{}]*list.Element
-		stat    *CacheStat
+		ctx       context.Context
+		ctxCancel context.CancelFunc
+		name      string
+		lock      sync.RWMutex
+		atomic    atomic.Value
+		barrier   singleflight.Group
+		size      int
+		queue     *list.List
+		items     map[interface{}]*list.Element
+		stat      *CacheStat
 
 		initLru  initLru
 		flushLru flushLru
@@ -121,6 +126,7 @@ func instanceLru(name string, opts ...LruOption) (*lruMemory, error) {
 		opt(lru)
 	}
 
+	lru.ctx, lru.ctxCancel = context.WithCancel(context.Background())
 	lru.start()
 	return lru, nil
 }
@@ -294,12 +300,14 @@ func (c *lruMemory) initCache() {
 
 		go func() {
 			t := time.NewTicker(c.initLru.interval)
+		END:
 			for {
 				select {
 				case <-t.C:
 					_ = c.initLru.onInit(c)
 					atomic.StoreInt32(&c.initLru.flag, 0)
-				default:
+				case <-c.ctx.Done():
+					break END
 				}
 			}
 		}()
@@ -314,15 +322,25 @@ func (c *lruMemory) flushCache() {
 
 		go func() {
 			t := time.NewTicker(c.flushLru.interval)
+		END:
 			for {
 				select {
 				case <-t.C:
 					_ = c.Range(c.flushLru.onFlush)
 					atomic.StoreInt32(&c.flushLru.flag, 0)
-				default:
+				case <-c.ctx.Done():
+					break END
 				}
 			}
 		}()
+	}
+}
+
+func (c *lruMemory) Close() {
+	c.ctxCancel()
+	if c.flushLru.onFlush != nil {
+		_ = c.Range(c.flushLru.onFlush)
+		atomic.StoreInt32(&c.flushLru.flag, 0)
 	}
 }
 
