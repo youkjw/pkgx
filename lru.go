@@ -137,6 +137,7 @@ func (c *LruMemory) Add(key string, value interface{}) bool {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	if ent, ok := c.items[key]; ok {
+		ent.Value.(*entry).value = value
 		c.queue.MoveToFront(ent)
 		return true
 	}
@@ -171,7 +172,7 @@ func (c *LruMemory) doGet(key string) (*entry, bool) {
 	c.lock.RUnlock()
 	if ok {
 		val := v.Value.(*entry)
-		c.Add(key, val)
+		c.Add(key, val.value)
 		return val, true
 	}
 	return nil, false
