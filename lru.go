@@ -40,18 +40,19 @@ type (
 	lruFunc func(memory *lruMemory) error
 
 	lruMemory struct {
-		init bool
+		inited bool
 
 		ctx       context.Context
 		ctxCancel context.CancelFunc
-		name      string
-		lock      sync.RWMutex
-		atomic    atomic.Value
-		barrier   singleflight.Group
-		size      int
-		queue     *list.List
-		items     map[interface{}]*list.Element
-		stat      *CacheStat
+
+		name    string
+		size    int
+		lock    sync.RWMutex
+		atomic  atomic.Value
+		barrier singleflight.Group
+		queue   *list.List
+		items   map[interface{}]*list.Element
+		stat    *CacheStat
 
 		initLru  initLru
 		flushLru flushLru
@@ -289,9 +290,9 @@ func (c *lruMemory) Range(f func(key string, value interface{}) error) error {
 
 func (c *lruMemory) initCache() {
 	if c.initLru.interval > 0 && c.initLru.onInit != nil {
-		if !c.init { // 防止多次初始化
+		if !c.inited { // 防止多次初始化
+			c.inited = true
 			_ = c.initLru.onInit(c)
-			c.init = true
 		}
 
 		if !atomic.CompareAndSwapInt32(&c.initLru.flag, 0, 1) { //防止同时运行多个
@@ -300,14 +301,14 @@ func (c *lruMemory) initCache() {
 
 		go func() {
 			t := time.NewTicker(c.initLru.interval)
-		END:
+		INIT:
 			for {
 				select {
 				case <-t.C:
 					_ = c.initLru.onInit(c)
 					atomic.StoreInt32(&c.initLru.flag, 0)
 				case <-c.ctx.Done():
-					break END
+					break INIT
 				}
 			}
 		}()
@@ -322,14 +323,14 @@ func (c *lruMemory) flushCache() {
 
 		go func() {
 			t := time.NewTicker(c.flushLru.interval)
-		END:
+		FLUSH:
 			for {
 				select {
 				case <-t.C:
 					_ = c.Range(c.flushLru.onFlush)
 					atomic.StoreInt32(&c.flushLru.flag, 0)
 				case <-c.ctx.Done():
-					break END
+					break FLUSH
 				}
 			}
 		}()

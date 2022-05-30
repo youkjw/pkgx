@@ -14,26 +14,41 @@ type (
 		ctx context.Context
 
 		interval time.Duration
+		ticker   *time.Ticker
 		execute  Execute
 		numSlots int
 		slots    []*list.List
 	}
 )
 
-func instanceTimingWheel(ctx context.Context) *timingwheel {
-	t := &timingwheel{
+func instanceTimingWheel(ctx context.Context, interval time.Duration) *timingwheel {
+	tw := &timingwheel{
 		ctx:      nil,
-		interval: 0,
+		interval: interval,
+		ticker:   time.NewTicker(interval),
 		execute:  nil,
-		numSlots: 0,
+		numSlots: 300,
 		slots:    nil,
 	}
-	t.initSlots()
-	return t
+	tw.initSlots()
+	go tw.run()
+	return tw
 }
 
 func (tw *timingwheel) initSlots() {
 	for i := 0; i < tw.numSlots; i++ {
 		tw.slots[i] = list.New()
+	}
+}
+
+func (tw *timingwheel) run() {
+TASK:
+	for {
+		select {
+		case <-tw.ticker.C:
+
+		case <-tw.ctx.Done():
+			break TASK
+		}
 	}
 }
