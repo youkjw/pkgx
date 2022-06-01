@@ -1,4 +1,4 @@
-package memory
+package cache
 
 import (
 	"container/list"
@@ -6,42 +6,16 @@ import (
 	"golang.org/x/sync/singleflight"
 	"sync"
 	"sync/atomic"
-	"time"
 )
-
-type LruCache interface {
-	Cache
-
-	initCache()
-
-	Contains(key string) bool
-
-	// Removes the oldest entry from cache.
-	RemoveOldest()
-
-	// Returns the oldest entry from the cache. #key, value, isFound
-	GetOldest() (key string, value interface{}, ok bool)
-
-	// Returns a slice of the keys in the cache, from oldest to newest.
-	Keys() []string
-
-	Range(f func(key string, value interface{}) error) error
-
-	flushCache()
-}
 
 type (
 	// LruOption defines the method to customize a lruMemory.
-	LruOption func(cache *lruMemory)
+	LruOption func(lru *lruMemory)
 
 	// handleFunc
 	handleFunc func(key string, value interface{}) error
-	// lruFunc
-	lruFunc func(memory *lruMemory) error
 
 	lruMemory struct {
-		inited bool
-
 		ctx       context.Context
 		ctxCancel context.CancelFunc
 
@@ -54,8 +28,6 @@ type (
 		items   map[interface{}]*list.Element
 		stat    *CacheStat
 
-		initLru  initLru
-		flushLru flushLru
 		onRemove handleFunc
 	}
 
@@ -63,18 +35,6 @@ type (
 	entry struct {
 		key   interface{}
 		value interface{}
-	}
-
-	initLru struct {
-		flag     int32
-		onInit   lruFunc
-		interval time.Duration
-	}
-
-	flushLru struct {
-		flag     int32
-		onFlush  handleFunc
-		interval time.Duration
 	}
 )
 
@@ -84,37 +44,13 @@ func WithSize(size int) LruOption {
 	}
 }
 
-func WithInit(f func(*lruMemory) error) LruOption {
-	return func(lru *lruMemory) {
-		lru.initLru.onInit = f
-	}
-}
-
 func WithOnRemove(f handleFunc) LruOption {
 	return func(lru *lruMemory) {
 		lru.onRemove = f
 	}
 }
 
-func WithFlush(f handleFunc) LruOption {
-	return func(lru *lruMemory) {
-		lru.flushLru.onFlush = f
-	}
-}
-
-func WithInitInterval(t time.Duration) LruOption {
-	return func(lru *lruMemory) {
-		lru.initLru.interval = t
-	}
-}
-
-func WithFlushInterval(t time.Duration) LruOption {
-	return func(lru *lruMemory) {
-		lru.flushLru.interval = t
-	}
-}
-
-func instanceLru(name string, opts ...LruOption) (*lruMemory, error) {
+func NewLru(name string, opts ...LruOption) (*lruMemory, error) {
 	lru := &lruMemory{
 		name:  name,
 		size:  0,
@@ -128,13 +64,7 @@ func instanceLru(name string, opts ...LruOption) (*lruMemory, error) {
 	}
 
 	lru.ctx, lru.ctxCancel = context.WithCancel(context.Background())
-	lru.start()
 	return lru, nil
-}
-
-func (c *lruMemory) start() {
-	c.initCache()
-	c.flushCache()
 }
 
 func (c *lruMemory) Add(key string, value interface{}) bool {
@@ -286,62 +216,6 @@ func (c *lruMemory) Range(f func(key string, value interface{}) error) error {
 		}
 	}
 	return nil
-}
-
-func (c *lruMemory) initCache() {
-	if c.initLru.interval > 0 && c.initLru.onInit != nil {
-		if !c.inited { // 防止多次初始化
-			c.inited = true
-			_ = c.initLru.onInit(c)
-		}
-
-		if !atomic.CompareAndSwapInt32(&c.initLru.flag, 0, 1) { //防止同时运行多个
-			return
-		}
-
-		go func() {
-			t := time.NewTicker(c.initLru.interval)
-		INIT:
-			for {
-				select {
-				case <-t.C:
-					_ = c.initLru.onInit(c)
-					atomic.StoreInt32(&c.initLru.flag, 0)
-				case <-c.ctx.Done():
-					break INIT
-				}
-			}
-		}()
-	}
-}
-
-func (c *lruMemory) flushCache() {
-	if c.flushLru.interval > 0 && c.flushLru.onFlush != nil {
-		if !atomic.CompareAndSwapInt32(&c.flushLru.flag, 0, 1) { //防止同时运行多个
-			return
-		}
-
-		go func() {
-			t := time.NewTicker(c.flushLru.interval)
-		FLUSH:
-			for {
-				select {
-				case <-t.C:
-					_ = c.Range(c.flushLru.onFlush)
-					atomic.StoreInt32(&c.flushLru.flag, 0)
-				case <-c.ctx.Done():
-					break FLUSH
-				}
-			}
-		}()
-	}
-}
-
-func (c *lruMemory) Close() {
-	c.ctxCancel()
-	if c.flushLru.onFlush != nil {
-		_ = c.Range(c.flushLru.onFlush)
-	}
 }
 
 func (s *CacheStat) IncrementHit() {

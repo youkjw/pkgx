@@ -1,4 +1,4 @@
-package memory
+package cache
 
 import (
 	"fmt"
@@ -9,7 +9,7 @@ import (
 )
 
 func TestLruMemory_Init(t *testing.T) {
-	lru, err := Lru("test",
+	lru, err := NewLru("test",
 		WithSize(3),
 		WithInit(func(memory *lruMemory) error {
 			memory.Add("a", "test")
@@ -42,7 +42,7 @@ func TestLruMemory_Init(t *testing.T) {
 }
 
 func TestLruMemory_Add(t *testing.T) {
-	lru, err := Lru("test", WithSize(2))
+	lru, err := NewLru("test", WithSize(2))
 	assert.Nil(t, err)
 
 	lru.Add("a", "test")
@@ -68,7 +68,7 @@ func TestLruMemory_Add(t *testing.T) {
 }
 
 func TestLruMemory_Get(t *testing.T) {
-	lru, err := Lru("test")
+	lru, err := NewLru("test")
 	assert.Nil(t, err)
 
 	lru.Add("a", "test")
@@ -91,7 +91,7 @@ func TestLruMemory_Get(t *testing.T) {
 }
 
 func TestLruMemory_Take(t *testing.T) {
-	lru, err := Lru("test")
+	lru, err := NewLru("test")
 	assert.Nil(t, err)
 
 	var wait sync.WaitGroup
@@ -121,7 +121,7 @@ func TestLruMemory_Take(t *testing.T) {
 }
 
 func TestLruMemory_Remove(t *testing.T) {
-	lru, err := Lru("test")
+	lru, err := NewLru("test")
 	assert.Nil(t, err)
 
 	lru.Add("a", "test")
@@ -139,7 +139,7 @@ func TestLruMemory_Remove(t *testing.T) {
 }
 
 func TestLruMemory_Contains(t *testing.T) {
-	lru, err := Lru("test")
+	lru, err := NewLru("test")
 	assert.Nil(t, err)
 
 	lru.Add("a", "test")
@@ -148,7 +148,7 @@ func TestLruMemory_Contains(t *testing.T) {
 }
 
 func TestLruMemory_Keys(t *testing.T) {
-	lru, err := Lru("test")
+	lru, err := NewLru("test")
 	assert.Nil(t, err)
 
 	lru.Add("a", "test")
@@ -164,7 +164,7 @@ func TestLruMemory_Keys(t *testing.T) {
 }
 
 func TestLruMemory_Range(t *testing.T) {
-	lru, err := Lru("test")
+	lru, err := NewLru("test")
 	assert.Nil(t, err)
 
 	lru.Add("a", "test")
