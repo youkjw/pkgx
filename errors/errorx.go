@@ -31,11 +31,11 @@ func NewErrorx(code int, message string) Errorx {
 }
 
 func NewErrorxCode(code int, message string) Errorx {
-	return add(code, message, "", errModCode)
+	return add(code, message, "", ErrorxModCode)
 }
 
 func NewErrorxPrefix(code int, message string, prefix string) Errorx {
-	return add(code, message, prefix, errModCode)
+	return add(code, message, prefix, ErrorxModCodePrefix)
 }
 
 func (e *Errorx) Error() string {
