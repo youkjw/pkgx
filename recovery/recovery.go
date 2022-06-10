@@ -1,17 +1,18 @@
 package recovery
 
 import (
+	"errors"
 	"fmt"
 	"runtime/debug"
 )
 
-func Hook[V any](callback func() (V, error)) (result V, err error) {
+func Hook[V any](call func() (V, error)) (result V, err error) {
 	defer func() {
 		if p := recover(); p != nil {
 			stackInfo := string(debug.Stack())
-			fmt.Printf("panic error: %v, %s", p, stackInfo)
+			err = errors.New(fmt.Sprintf("panic error: %v, %s", p, stackInfo))
 		}
 	}()
-	result, err = callback()
+	result, err = call()
 	return
 }
