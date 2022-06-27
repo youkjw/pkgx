@@ -11,10 +11,10 @@ import (
 func TestLruMemory_Init(t *testing.T) {
 	lru, err := NewLru("test",
 		WithSize(3),
-		//WithInit(func(memory *lruMemory) error {
-		//	memory.Add("a", "test")
-		//	memory.Add("b", "test1")
-		//	memory.Add("c", "test2")
+		//WithInit(func(pkgx *lruMemory) error {
+		//	pkgx.Add("a", "test")
+		//	pkgx.Add("b", "test1")
+		//	pkgx.Add("c", "test2")
 		//	return nil
 		//}),
 		//WithInitInterval(10*time.Second),

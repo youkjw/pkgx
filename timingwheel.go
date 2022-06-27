@@ -1,4 +1,4 @@
-package memory
+package pkgx
 
 import (
 	"container/list"
