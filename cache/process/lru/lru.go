@@ -1,9 +1,10 @@
-package cache
+package lru
 
 import (
 	"container/list"
 	"context"
 	"golang.org/x/sync/singleflight"
+	"memory/cache"
 	"sync"
 	"sync/atomic"
 )
@@ -26,7 +27,7 @@ type (
 		barrier singleflight.Group
 		queue   *list.List
 		items   map[interface{}]*list.Element
-		stat    *CacheStat
+		stat    *cache.CacheStat
 
 		onRemove handleFunc
 	}
@@ -56,7 +57,7 @@ func NewLru(name string, opts ...LruOption) (*lruMemory, error) {
 		size:  0,
 		queue: list.New(),
 		items: make(map[interface{}]*list.Element),
-		stat:  &CacheStat{},
+		stat:  &cache.CacheStat{},
 	}
 
 	for _, opt := range opts {
@@ -194,7 +195,7 @@ func (c *lruMemory) Contains(key string) (ok bool) {
 	return
 }
 
-func (c *lruMemory) Stat() *CacheStat {
+func (c *lruMemory) Stat() *cache.CacheStat {
 	return c.stat
 }
 
@@ -216,12 +217,4 @@ func (c *lruMemory) Range(f func(key string, value interface{}) error) error {
 		}
 	}
 	return nil
-}
-
-func (s *CacheStat) IncrementHit() {
-	atomic.AddUint64(&s.hit, 1)
-}
-
-func (s *CacheStat) IncrementMiss() {
-	atomic.AddUint64(&s.miss, 1)
 }

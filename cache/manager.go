@@ -1,9 +1,8 @@
-package memory
+package cache
 
 import (
 	"context"
 	"errors"
-	"memory/cache"
 	"sync"
 	"time"
 )
@@ -18,9 +17,9 @@ type (
 	Entry struct {
 		ctx     context.Context
 		name    string
-		memory  cache.Cache
+		memory  Cache
 		preload bool
-		channel chan func(cache cache.Cache)
+		channel chan func(cache Cache)
 		fresh   *Handle
 		flush   *Handle
 	}
@@ -29,12 +28,12 @@ type (
 
 	Handle struct {
 		flag     bool
-		handle   func(cache cache.Cache)
+		handle   func(cache Cache)
 		interval time.Duration
 	}
 )
 
-func WithFresh(f func(cache cache.Cache), duration time.Duration, preload bool) EntryOption {
+func WithFresh(f func(cache Cache), duration time.Duration, preload bool) EntryOption {
 	return func(ent *Entry) {
 		ent.fresh = &Handle{
 			flag:     false,
@@ -45,7 +44,7 @@ func WithFresh(f func(cache cache.Cache), duration time.Duration, preload bool) 
 	}
 }
 
-func WithFlush(f func(cache cache.Cache), duration time.Duration) EntryOption {
+func WithFlush(f func(cache Cache), duration time.Duration) EntryOption {
 	return func(ent *Entry) {
 		ent.flush = &Handle{
 			flag:     false,
@@ -64,7 +63,7 @@ func New() *Manager {
 	}
 }
 
-func (m *Manager) Add(name string, cache cache.Cache, opts ...EntryOption) error {
+func (m *Manager) Add(name string, cache Cache, opts ...EntryOption) error {
 	if _, ok := m.M.Load(name); ok {
 		return errors.New("cache entry is already exist")
 	}

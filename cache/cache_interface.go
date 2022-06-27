@@ -1,5 +1,7 @@
 package cache
 
+import "sync/atomic"
+
 type (
 	CacheStat struct {
 		miss, hit uint64
@@ -21,3 +23,11 @@ type (
 		Range(f func(key string, value interface{}) error) error
 	}
 )
+
+func (s *CacheStat) IncrementHit() {
+	atomic.AddUint64(&s.hit, 1)
+}
+
+func (s *CacheStat) IncrementMiss() {
+	atomic.AddUint64(&s.miss, 1)
+}
