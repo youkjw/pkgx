@@ -326,18 +326,18 @@ func (avl *AvlTree[V]) String() string {
 //	}
 //	return values
 //}
-//
-//// Left returns the minimum element of the AVL tree
-//// or nil if the tree is empty.
-//func (t *AvlTree[V]) Left() *Node {
-//	return t.bottom(0)
-//}
-//
-//// Right returns the maximum element of the AVL tree
-//// or nil if the tree is empty.
-//func (t *AvlTree[V]) Right() *Node {
-//	return t.bottom(1)
-//}
+
+// Left returns the minimum element of the AVL tree
+// or nil if the tree is empty.
+func (t *AvlTree[V]) Left() *Node[V] {
+	return t.bottom(0)
+}
+
+// Right returns the maximum element of the AVL tree
+// or nil if the tree is empty.
+func (t *AvlTree[V]) Right() *Node[V] {
+	return t.bottom(1)
+}
 
 // Prev returns the previous element in an inorder
 // walk of the AVL tree.
