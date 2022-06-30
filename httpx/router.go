@@ -7,7 +7,10 @@ import (
 
 type Router struct {
 	IRoute
-	pool sync.Pool
+	trees       methodTrees
+	pool        sync.Pool
+	maxParams   uint16
+	maxSections uint16
 }
 
 func New() *Router {
@@ -33,7 +36,28 @@ func (router *Router) allocateContext() *Context {
 }
 
 func (router *Router) addRoute(method, path string, handlers HandlersChain) {
+	assert(path[0] == '/', "path must begin with '/'")
+	assert(method != "", "HTTP method can not be empty")
+	assert(len(handlers) > 0, "there must be at least one handler")
 
+	debugPrintRoute(method, path, handlers)
+
+	root := router.trees.get(method)
+	if root == nil {
+		root = new(node)
+		root.fullPath = "/"
+		router.trees = append(router.trees, methodTree{method: method, root: root})
+	}
+	root.addRoute(path, handlers)
+
+	// Update maxParams
+	if paramsCount := countParams(path); paramsCount > router.maxParams {
+		router.maxParams = paramsCount
+	}
+
+	if sectionsCount := countSections(path); sectionsCount > router.maxSections {
+		router.maxSections = sectionsCount
+	}
 }
 
 var (
