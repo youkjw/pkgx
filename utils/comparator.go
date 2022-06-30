@@ -26,12 +26,12 @@ func StringComparator[V string](a, b V) int {
 	return 0
 }
 
-type NumberV interface {
+type Number interface {
 	int | int8 | int16 | int32 | int64 | uint | uint8 | uint16 | uint32 | uint64 | float32 | float64
 }
 
 // IntComparator provides a basic comparison on int
-func IntComparator[V NumberV](a, b V) int {
+func IntComparator[V Number](a, b V) int {
 	switch {
 	case a > b:
 		return 1

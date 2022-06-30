@@ -5,7 +5,6 @@ import (
 	"golang.org/x/net/http2/h2c"
 	"net"
 	"net/http"
-	"path"
 )
 
 var (
@@ -36,9 +35,9 @@ func (handler *handler) isTrustedProxy(ip net.IP) bool {
 }
 
 func Default() *handler {
-	InitDebug()
-	hanlder := New()
-	return hanlder
+	SetDebugMode()
+	handlerObj := New()
+	return handlerObj
 }
 
 func New() *handler {
@@ -128,32 +127,5 @@ func serveError(c *Context, code int, defaultMessage []byte) {
 		}
 		return
 	}
-	c.Writer.WriteHeaderNow()
-}
-
-func redirectTrailingSlash(c *Context) {
-	req := c.Request
-	p := req.URL.Path
-	if prefix := path.Clean(c.Request.Header.Get("X-Forwarded-Prefix")); prefix != "." {
-		p = prefix + "/" + req.URL.Path
-	}
-	req.URL.Path = p + "/"
-	if length := len(p); length > 1 && p[length-1] == '/' {
-		req.URL.Path = p[:length-1]
-	}
-	redirectRequest(c)
-}
-
-func redirectRequest(c *Context) {
-	req := c.Request
-	rPath := req.URL.Path
-	rURL := req.URL.String()
-
-	code := http.StatusMovedPermanently // Permanent redirect, request with GET method
-	if req.Method != http.MethodGet {
-		code = http.StatusTemporaryRedirect
-	}
-	debugPrint("redirecting request %d: %s --> %s", code, rPath, rURL)
-	http.Redirect(&c.Writer, req, rURL, code)
 	c.Writer.WriteHeaderNow()
 }

@@ -22,7 +22,7 @@ var (
 	modeName = env.DeployEnvDev
 )
 
-func InitDebug() {
+func SetDebugMode() {
 	switch {
 	case env.IsTest():
 		mode = testCode

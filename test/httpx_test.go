@@ -10,8 +10,9 @@ import (
 func TestHttpHandler(t *testing.T) {
 	handler := httpx.Default()
 	handler.Use(first(), second())
-	handler.Handle("GET", "/", func(context *httpx.Context) {
-		context.Writer.Write([]byte("test"))
+	handler.Handle("GET", "/", func(c *httpx.Context) {
+		c.Writer.Write([]byte("ip:" + c.ClientIP()))
+		c.Writer.Write([]byte("test"))
 	})
 	err := handler.Run(":8081")
 	assert.Nil(t, err)
