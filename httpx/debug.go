@@ -56,17 +56,17 @@ func IsDebugging() bool {
 	return Mode() == debugCode
 }
 
-// DebugPrintRouteFunc indicates debug log output format.
-var DebugPrintRouteFunc func(httpMethod, absolutePath, handlerName string, nuHandlers int)
+// DebugPrintRouterFunc indicates debug log output format.
+var DebugPrintRouterFunc func(httpMethod, absolutePath, handlerName string, nuHandlers int)
 
-func debugPrintRoute(httpMethod, absolutePath string, handlers HandlersChain) {
+func debugPrintRouter(httpMethod, absolutePath string, handlers HandlersChain) {
 	if IsDebugging() {
 		nuHandlers := len(handlers)
 		handlerName := nameOfFunction(handlers.Last())
-		if DebugPrintRouteFunc == nil {
+		if DebugPrintRouterFunc == nil {
 			debugPrint("%-6s %-25s --> %s (%d handlers)\n", httpMethod, absolutePath, handlerName, nuHandlers)
 		} else {
-			DebugPrintRouteFunc(httpMethod, absolutePath, handlerName, nuHandlers)
+			DebugPrintRouterFunc(httpMethod, absolutePath, handlerName, nuHandlers)
 		}
 	}
 }

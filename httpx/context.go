@@ -28,13 +28,13 @@ var (
 // abortIndex represents a typical value used in abort functions.
 const abortIndex int8 = math.MaxInt8 >> 1
 
-// HandlerFunc defines the Handler used by middleware as return value.
+// HandlerFunc defines the handler used by middleware as return value.
 type HandlerFunc func(*Context)
 
 // HandlersChain defines a HandlerFunc slice.
 type HandlersChain []HandlerFunc
 
-// Last returns the last Handler in the chain. i.e. the last Handler is the main one.
+// Last returns the last handler in the chain. i.e. the last handler is the main one.
 func (c HandlersChain) Last() HandlerFunc {
 	if length := len(c); length > 0 {
 		return c[length-1]
@@ -44,9 +44,9 @@ func (c HandlersChain) Last() HandlerFunc {
 
 type Context struct {
 	Request *http.Request
-	Writer  *responseWriter
+	Writer  responseWriter
 
-	router   *Router
+	Router   *Router
 	index    int8
 	handlers HandlersChain
 	fullPath string
@@ -70,7 +70,7 @@ type Context struct {
 /************************************/
 
 func (c *Context) reset() {
-	c.Writer = &responseWriter{}
+	c.Writer = responseWriter{}
 	c.handlers = nil
 	c.index = -1
 
@@ -99,7 +99,7 @@ func (c *Context) Copy() *Context {
 /************************************/
 
 // Next should be used only inside middleware.
-// It executes the pending handlers in the chain inside the calling Handler.
+// It executes the pending handlers in the chain inside the calling handler.
 // See example in GitHub.
 func (c *Context) Next() {
 	c.index++
@@ -114,7 +114,7 @@ func (c *Context) IsAborted() bool {
 	return c.index >= abortIndex
 }
 
-// Abort prevents pending handlers from being called. Note that this will not stop the current Handler.
+// Abort prevents pending handlers from being called. Note that this will not stop the current handler.
 // Let's say you have an authorization middleware that validates that the current request is authorized.
 // If the authorization fails (ex: the password does not match), call Abort to ensure the remaining handlers
 // for this request are not called.
@@ -183,7 +183,7 @@ func (c *Context) SetCookie(name, value string, maxAge int, path, domain string,
 	if path == "" {
 		path = "/"
 	}
-	http.SetCookie(c.Writer, &http.Cookie{
+	http.SetCookie(&c.Writer, &http.Cookie{
 		Name:     name,
 		Value:    url.QueryEscape(value),
 		MaxAge:   maxAge,

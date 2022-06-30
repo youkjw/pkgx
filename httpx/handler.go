@@ -13,17 +13,17 @@ var (
 	default405Body = []byte("405 method not allowed")
 )
 
-type Handler struct {
-	engine *Router
+type handler struct {
+	*Router
 }
 
-func (handler *Handler) isUnsafeTrustedProxies() bool {
+func (handler *handler) isUnsafeTrustedProxies() bool {
 	return handler.isTrustedProxy(net.ParseIP("0.0.0.0")) || handler.isTrustedProxy(net.ParseIP("::"))
 }
 
-// isTrustedProxy will check whether the IP address is included in the trusted list according to Engine.trustedCIDRs
-func (handler *Handler) isTrustedProxy(ip net.IP) bool {
-	c := handler.engine.pool.Get().(*Context)
+// isTrustedProxy will check whether the IP address is included in the trusted list according to Router.trustedCIDRs
+func (handler *handler) isTrustedProxy(ip net.IP) bool {
+	c := handler.Router.pool.Get().(*Context)
 	if c.trustedCIDRs == nil {
 		return false
 	}
@@ -35,71 +35,66 @@ func (handler *Handler) isTrustedProxy(ip net.IP) bool {
 	return false
 }
 
-func Default() *Handler {
-	hanlder := New()
+func Default() *handler {
 	InitDebug()
+	hanlder := New()
 	return hanlder
 }
 
-func New() *Handler {
-	return &Handler{engine: NewRouter()}
+func New() *handler {
+	return &handler{Router: NewRouter()}
 }
 
-// Run attaches the router to a http.Server and starts listening and serving HTTP requests.
-// It is a shortcut for http.ListenAndServe(addr, router)
+// Run attaches the Router to a http.Server and starts listening and serving HTTP requests.
+// It is a shortcut for http.ListenAndServe(addr, Router)
 // Note: this method will block the calling goroutine indefinitely unless an error happens.
-func (handler *Handler) Run(addr ...string) (err error) {
+func (handler *handler) Run(addr ...string) (err error) {
 	defer func() { debugPrintError(err) }()
-
-	if handler.isUnsafeTrustedProxies() {
-		debugPrint("[WARNING] You trusted all proxies, this is NOT safe. We recommend you to set a value.\n" +
-			"Please check https://pkg.go.dev/github.com/gin-gonic/gin#readme-don-t-trust-all-proxies for details.")
-	}
 
 	address := resolveAddress(addr)
 	debugPrint("Listening and serving HTTP on %s\n", address)
-	err = http.ListenAndServe(address, handler.Handler())
+	err = http.ListenAndServe(address, handler.handler())
 	return
 }
 
-func (handler *Handler) Handler() http.Handler {
+func (handler *handler) handler() http.Handler {
 	h2s := &http2.Server{}
 	return h2c.NewHandler(handler, h2s)
 }
 
 // ServeHTTP conforms to the http.Handler interface.
-func (handler *Handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	c := handler.engine.pool.Get().(*Context)
+func (handler *handler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	c := handler.Router.pool.Get().(*Context)
+	c.reset()
 	c.Writer.reset(w)
 	c.Request = req
-	c.reset()
 
 	handler.handleHTTPRequest(c)
 
-	handler.engine.pool.Put(c)
+	handler.Router.pool.Put(c)
 }
 
-func (handler *Handler) handleHTTPRequest(c *Context) {
+func (handler *handler) handleHTTPRequest(c *Context) {
 	httpMethod := c.Request.Method
 	rPath := c.Request.URL.Path
 	unescape := false
-	if handler.engine.UseRawPath && len(c.Request.URL.RawPath) > 0 {
+	if handler.Router.UseRawPath && len(c.Request.URL.RawPath) > 0 {
 		rPath = c.Request.URL.RawPath
-		unescape = handler.engine.UnescapePathValues
+		unescape = handler.Router.UnescapePathValues
 	}
 
-	if handler.engine.RemoveExtraSlash {
+	if handler.Router.RemoveExtraSlash {
 		rPath = cleanPath(rPath)
 	}
 
 	// Find root of the tree for the given HTTP method
-	t := handler.engine.trees
+	t := handler.Router.trees
 	for i, tl := 0, len(t); i < tl; i++ {
 		if t[i].method != httpMethod {
 			continue
 		}
 		root := t[i].root
-		// Find route in tree
+		// Find Router in tree
 		value := root.getValue(rPath, c.params, c.skippedNodes, unescape)
 		if value.params != nil {
 			c.Params = *value.params
@@ -159,6 +154,6 @@ func redirectRequest(c *Context) {
 		code = http.StatusTemporaryRedirect
 	}
 	debugPrint("redirecting request %d: %s --> %s", code, rPath, rURL)
-	http.Redirect(c.Writer, req, rURL, code)
+	http.Redirect(&c.Writer, req, rURL, code)
 	c.Writer.WriteHeaderNow()
 }

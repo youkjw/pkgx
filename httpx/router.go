@@ -6,7 +6,7 @@ import (
 )
 
 type Router struct {
-	IRoute
+	IRouter
 	trees       methodTrees
 	pool        sync.Pool
 	maxParams   uint16
@@ -26,49 +26,53 @@ type Router struct {
 }
 
 func NewRouter() *Router {
-	route := &Router{IRoute: IRoute{
+	Router := &Router{IRouter: IRouter{
 		Handlers: nil,
 		basePath: "/",
 		root:     true,
 	}}
-	route.IRoute.engine = route
-	route.pool.New = func() any {
-		return route.allocateContext()
+	Router.IRouter.Router = Router
+	Router.pool.New = func() any {
+		return Router.allocateContext()
 	}
-	return route
+	return Router
 }
 
-func (router *Router) allocateContext() *Context {
+func (Router *Router) allocateContext() *Context {
+	v := make(Params, 0, Router.maxParams)
+	skippedNodes := make([]skippedNode, 0, Router.maxSections)
 	return &Context{
-		router:              router,
+		Router:              Router,
+		params:              &v,
+		skippedNodes:        &skippedNodes,
 		ForwardedByClientIP: true,
 		RemoteIPHeaders:     defaultRemoteIPHeaders,
 		trustedCIDRs:        defaultTrustedCIDRs,
 	}
 }
 
-func (router *Router) addRoute(method, path string, handlers HandlersChain) {
+func (Router *Router) addRouter(method, path string, handlers HandlersChain) {
 	assert(path[0] == '/', "path must begin with '/'")
 	assert(method != "", "HTTP method can not be empty")
-	assert(len(handlers) > 0, "there must be at least one Handler")
+	assert(len(handlers) > 0, "there must be at least one handler")
 
-	debugPrintRoute(method, path, handlers)
+	debugPrintRouter(method, path, handlers)
 
-	root := router.trees.get(method)
+	root := Router.trees.get(method)
 	if root == nil {
 		root = new(node)
 		root.fullPath = "/"
-		router.trees = append(router.trees, methodTree{method: method, root: root})
+		Router.trees = append(Router.trees, methodTree{method: method, root: root})
 	}
-	root.addRoute(path, handlers)
+	root.addRouter(path, handlers)
 
 	// Update maxParams
-	if paramsCount := countParams(path); paramsCount > router.maxParams {
-		router.maxParams = paramsCount
+	if paramsCount := countParams(path); paramsCount > Router.maxParams {
+		Router.maxParams = paramsCount
 	}
 
-	if sectionsCount := countSections(path); sectionsCount > router.maxSections {
-		router.maxSections = sectionsCount
+	if sectionsCount := countSections(path); sectionsCount > Router.maxSections {
+		Router.maxSections = sectionsCount
 	}
 }
 
@@ -77,55 +81,55 @@ var (
 	regEnLetter = regexp.MustCompile("^[A-Z]+$")
 )
 
-type IRoutes interface {
-	Use(...HandlerFunc) IRoutes
-	Handle(string, string, ...HandlerFunc) IRoutes
+type IRouters interface {
+	Use(...HandlerFunc) IRouters
+	Handle(string, string, ...HandlerFunc) IRouters
 }
 
-// IRoute a prefix and an array of handlers (middleware).
-type IRoute struct {
+// IRouter a prefix and an array of handlers (middleware).
+type IRouter struct {
 	Handlers HandlersChain
 	basePath string
-	engine   *Router
+	Router   *Router
 	root     bool
 }
 
 // Use adds middleware to the group, see example code in GitHub.
-func (route *IRoute) Use(middleware ...HandlerFunc) IRoutes {
-	route.Handlers = append(route.Handlers, middleware...)
-	return route.returnObj()
+func (Router *IRouter) Use(middleware ...HandlerFunc) IRouters {
+	Router.Handlers = append(Router.Handlers, middleware...)
+	return Router.returnObj()
 }
 
-func (route *IRoute) Handle(httpMethod, relativePath string, handlers ...HandlerFunc) IRoutes {
+func (Router *IRouter) Handle(httpMethod, relativePath string, handlers ...HandlerFunc) IRouters {
 	if matched := regEnLetter.MatchString(httpMethod); !matched {
 		panic("http method " + httpMethod + " is not valid")
 	}
-	return route.handle(httpMethod, relativePath, handlers)
+	return Router.handle(httpMethod, relativePath, handlers)
 }
 
-func (route *IRoute) handle(httpMethod, relativePath string, handlers HandlersChain) IRoutes {
-	absolutePath := route.calculateAbsolutePath(relativePath)
-	handlers = route.combineHandlers(handlers)
-	route.engine.addRoute(httpMethod, absolutePath, handlers)
-	return route.returnObj()
+func (Router *IRouter) handle(httpMethod, relativePath string, handlers HandlersChain) IRouters {
+	absolutePath := Router.calculateAbsolutePath(relativePath)
+	handlers = Router.combineHandlers(handlers)
+	Router.Router.addRouter(httpMethod, absolutePath, handlers)
+	return Router.returnObj()
 }
 
-func (route *IRoute) combineHandlers(handlers HandlersChain) HandlersChain {
-	finalSize := len(route.Handlers) + len(handlers)
+func (Router *IRouter) combineHandlers(handlers HandlersChain) HandlersChain {
+	finalSize := len(Router.Handlers) + len(handlers)
 	assert(finalSize < int(abortIndex), "too many handlers")
 	mergedHandlers := make(HandlersChain, finalSize)
-	copy(mergedHandlers, route.Handlers)
-	copy(mergedHandlers[len(route.Handlers):], handlers)
+	copy(mergedHandlers, Router.Handlers)
+	copy(mergedHandlers[len(Router.Handlers):], handlers)
 	return mergedHandlers
 }
 
-func (route *IRoute) calculateAbsolutePath(relativePath string) string {
-	return joinPaths(route.basePath, relativePath)
+func (Router *IRouter) calculateAbsolutePath(relativePath string) string {
+	return joinPaths(Router.basePath, relativePath)
 }
 
-func (route *IRoute) returnObj() IRoutes {
-	if route.root {
-		return route.engine
+func (Router *IRouter) returnObj() IRouters {
+	if Router.root {
+		return Router.Router
 	}
-	return route
+	return Router
 }

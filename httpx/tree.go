@@ -1,6 +1,6 @@
 // Copyright 2013 Julien Schmidt. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be found
-// at https://github.com/julienschmidt/httprouter/blob/master/LICENSE
+// at https://github.com/julienschmidt/httpRouter/blob/master/LICENSE
 
 package httpx
 
@@ -25,7 +25,7 @@ type Param struct {
 	Value string
 }
 
-// Params is a Param-slice, as returned by the router.
+// Params is a Param-slice, as returned by the Router.
 // The slice is ordered, the first URL parameter is also the first slice value.
 // It is therefore safe to read values by the index.
 type Params []Param
@@ -145,9 +145,9 @@ func (n *node) incrementChildPrio(pos int) int {
 	return newPos
 }
 
-// addRoute adds a node with the given handle to the path.
+// addRouter adds a node with the given handle to the path.
 // Not concurrency-safe!
-func (n *node) addRoute(path string, handlers HandlersChain) {
+func (n *node) addRouter(path string, handlers HandlersChain) {
 	fullPath := path
 	n.priority++
 
@@ -344,7 +344,7 @@ func (n *node) insertChild(path string, fullPath string, handlers HandlersChain)
 
 		// catchAll
 		if i+len(wildcard) != len(path) {
-			panic("catch-all routes are only allowed at the end of the path in path '" + fullPath + "'")
+			panic("catch-all Routers are only allowed at the end of the path in path '" + fullPath + "'")
 		}
 
 		if len(n.path) > 0 && n.path[len(n.path)-1] == '/' {
@@ -595,7 +595,7 @@ walk: // Outer loop for walking the tree
 				return
 			}
 
-			// If there is no handle for this route, but this route has a
+			// If there is no handle for this Router, but this Router has a
 			// wildcard child, there must be a handle for this path with an
 			// additional trailing slash
 			if path == "/" && n.wildChild && n.nType != root {
@@ -644,7 +644,7 @@ walk: // Outer loop for walking the tree
 	}
 }
 
-// Makes a case-insensitive lookup of the given path and tries to find a Handler.
+// Makes a case-insensitive lookup of the given path and tries to find a handler.
 // It can optionally also fix trailing slashes.
 // It returns the case-corrected path and a bool indicating whether the lookup
 // was successful.
