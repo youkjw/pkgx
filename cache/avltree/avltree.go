@@ -329,14 +329,14 @@ func (avl *AvlTree[V]) String() string {
 
 // Left returns the minimum element of the AVL tree
 // or nil if the tree is empty.
-func (t *AvlTree[V]) Left() *Node[V] {
-	return t.bottom(0)
+func (avl *AvlTree[V]) Left() *Node[V] {
+	return avl.bottom(0)
 }
 
 // Right returns the maximum element of the AVL tree
 // or nil if the tree is empty.
-func (t *AvlTree[V]) Right() *Node[V] {
-	return t.bottom(1)
+func (avl *AvlTree[V]) Right() *Node[V] {
+	return avl.bottom(1)
 }
 
 // Prev returns the previous element in an inorder

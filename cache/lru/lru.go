@@ -10,13 +10,13 @@ import (
 )
 
 type (
-	// LruOption defines the method to customize a lruMemory.
-	LruOption func(lru *lruMemory)
+	// Option defines the method to customize a Lru.
+	Option func(lru *lru)
 
 	// handleFunc
 	handleFunc func(key string, value interface{}) error
 
-	lruMemory struct {
+	lru struct {
 		ctx       context.Context
 		ctxCancel context.CancelFunc
 
@@ -39,20 +39,20 @@ type (
 	}
 )
 
-func WithSize(size int) LruOption {
-	return func(lru *lruMemory) {
+func WithSize(size int) Option {
+	return func(lru *lru) {
 		lru.size = size
 	}
 }
 
-func WithOnRemove(f handleFunc) LruOption {
-	return func(lru *lruMemory) {
+func WithOnRemove(f handleFunc) Option {
+	return func(lru *lru) {
 		lru.onRemove = f
 	}
 }
 
-func NewLru(name string, opts ...LruOption) (*lruMemory, error) {
-	lru := &lruMemory{
+func NewLru(name string, opts ...Option) (*lru, error) {
+	Lru := &lru{
 		name:  name,
 		size:  0,
 		queue: list.New(),
@@ -61,14 +61,14 @@ func NewLru(name string, opts ...LruOption) (*lruMemory, error) {
 	}
 
 	for _, opt := range opts {
-		opt(lru)
+		opt(Lru)
 	}
 
-	lru.ctx, lru.ctxCancel = context.WithCancel(context.Background())
-	return lru, nil
+	Lru.ctx, Lru.ctxCancel = context.WithCancel(context.Background())
+	return Lru, nil
 }
 
-func (c *lruMemory) Add(key string, value interface{}) bool {
+func (c *lru) Add(key string, value interface{}) bool {
 	c.lock.Lock()
 	if ent, ok := c.items[key]; ok {
 		ent.Value.(*entry).value = value
@@ -91,7 +91,7 @@ func (c *lruMemory) Add(key string, value interface{}) bool {
 	return true
 }
 
-func (c *lruMemory) Get(key string) (value interface{}, ok bool) {
+func (c *lru) Get(key string) (value interface{}, ok bool) {
 	ent, ok := c.doGet(key)
 	if ok {
 		c.stat.IncrementHit()
@@ -102,7 +102,7 @@ func (c *lruMemory) Get(key string) (value interface{}, ok bool) {
 	return ent.value, ok
 }
 
-func (c *lruMemory) doGet(key string) (*entry, bool) {
+func (c *lru) doGet(key string) (*entry, bool) {
 	c.lock.RLock()
 	v, ok := c.items[key]
 	c.lock.RUnlock()
@@ -114,7 +114,7 @@ func (c *lruMemory) doGet(key string) (*entry, bool) {
 	return nil, false
 }
 
-func (c *lruMemory) Take(key string, f func() (interface{}, error)) (value interface{}, err error) {
+func (c *lru) Take(key string, f func() (interface{}, error)) (value interface{}, err error) {
 	if val, ok := c.doGet(key); ok {
 		c.stat.IncrementHit()
 		return val.value, nil
@@ -147,7 +147,7 @@ func (c *lruMemory) Take(key string, f func() (interface{}, error)) (value inter
 	return value, err
 }
 
-func (c *lruMemory) GetOldest() (key string, value interface{}, ok bool) {
+func (c *lru) GetOldest() (key string, value interface{}, ok bool) {
 	ent := c.queue.Back()
 	if ent != nil {
 		elems, exist := ent.Value.(*entry)
@@ -159,11 +159,11 @@ func (c *lruMemory) GetOldest() (key string, value interface{}, ok bool) {
 	return "", nil, false
 }
 
-func (c *lruMemory) Len() int {
+func (c *lru) Len() int {
 	return c.queue.Len()
 }
 
-func (c *lruMemory) Remove(key string) bool {
+func (c *lru) Remove(key string) bool {
 	c.lock.Lock()
 	if elem, ok := c.items[key]; ok {
 		c.queue.Remove(elem)
@@ -180,7 +180,7 @@ func (c *lruMemory) Remove(key string) bool {
 	return true
 }
 
-func (c *lruMemory) RemoveOldest() {
+func (c *lru) RemoveOldest() {
 	ent := c.queue.Back()
 	if ent != nil {
 		elems := ent.Value.(*entry)
@@ -188,18 +188,18 @@ func (c *lruMemory) RemoveOldest() {
 	}
 }
 
-func (c *lruMemory) Contains(key string) (ok bool) {
+func (c *lru) Contains(key string) (ok bool) {
 	c.lock.RLock()
 	defer c.lock.RLock()
 	_, ok = c.items[key]
 	return
 }
 
-func (c *lruMemory) Stat() *cache.CacheStat {
+func (c *lru) Stat() *cache.CacheStat {
 	return c.stat
 }
 
-func (c *lruMemory) Keys() []string {
+func (c *lru) Keys() []string {
 	keys := make([]string, 0, len(c.items))
 	_ = c.Range(func(key string, value interface{}) error {
 		keys = append(keys, key)
@@ -208,7 +208,7 @@ func (c *lruMemory) Keys() []string {
 	return keys
 }
 
-func (c *lruMemory) Range(f func(key string, value interface{}) error) error {
+func (c *lru) Range(f func(key string, value interface{}) error) error {
 	for ent := c.queue.Back(); ent != nil; ent = ent.Prev() {
 		val := ent.Value.(*entry)
 		err := f(val.key.(string), val.value)

@@ -134,7 +134,7 @@ TASK:
 	}
 }
 
-func (m *Manager[K, V]) Close() {
+func (m *Manager) Close() {
 	m.ctxCancel()
 
 	wait := sync.WaitGroup{}

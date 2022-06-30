@@ -5,24 +5,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"sync"
 	"testing"
-	"time"
 )
 
 func TestLruMemory_Init(t *testing.T) {
-	lru, err := NewLru("test",
+	cache, err := NewLru("test",
 		WithSize(3),
-		//WithInit(func(pkgx *lruMemory) error {
-		//	pkgx.Add("a", "test")
-		//	pkgx.Add("b", "test1")
-		//	pkgx.Add("c", "test2")
-		//	return nil
-		//}),
-		//WithInitInterval(10*time.Second),
-		//WithFlush(func(key string, value interface{}) error {
-		//	fmt.Println(key, value)
-		//	return nil
-		//}),
-		//WithFlushInterval(5*time.Second),
 		WithOnRemove(func(key string, value interface{}) error {
 			fmt.Println(key, value)
 			return nil
@@ -30,15 +17,17 @@ func TestLruMemory_Init(t *testing.T) {
 	)
 	assert.Nil(t, err)
 
-	tim := time.After(60 * time.Second)
-	for {
-		select {
-		case <-tim:
-			break
-		default:
-			lru.Remove("a")
-		}
-	}
+	cache.Add("a", 5)
+	fmt.Println(cache.Get("a"))
+	//tim := time.After(5 * time.Second)
+	//for {
+	//	select {
+	//	case <-tim:
+	//		break
+	//	default:
+	//		lru.Remove("a")
+	//	}
+	//}
 }
 
 func TestLruMemory_Add(t *testing.T) {
