@@ -8,6 +8,21 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"time"
+)
+
+var (
+	defaultTrustedCIDRs = []*net.IPNet{
+		{ // 0.0.0.0/0 (IPv4)
+			IP:   net.IP{0x0, 0x0, 0x0, 0x0},
+			Mask: net.IPMask{0x0, 0x0, 0x0, 0x0},
+		},
+		{ // ::/0 (IPv6)
+			IP:   net.IP{0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0},
+			Mask: net.IPMask{0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0},
+		},
+	}
+	defaultRemoteIPHeaders = []string{"X-Forwarded-For", "X-Real-IP"}
 )
 
 // abortIndex represents a typical value used in abort functions.
@@ -31,9 +46,13 @@ type Context struct {
 	Request *http.Request
 	Writer  *responseWriter
 
-	engine   *Router
+	router   *Router
 	index    int8
 	handlers HandlersChain
+
+	ForwardedByClientIP bool
+	RemoteIPHeaders     []string
+	trustedCIDRs        []*net.IPNet
 
 	// This mutex protects Keys map.
 	mu sync.RWMutex
@@ -188,6 +207,56 @@ func (c *Context) GetRawData() ([]byte, error) {
 	return ioutil.ReadAll(c.Request.Body)
 }
 
+func (c *Context) ClientIP() string {
+	remoteIP := net.ParseIP(c.RemoteIP())
+	if remoteIP == nil {
+		return ""
+	}
+
+	if c.ForwardedByClientIP && c.RemoteIPHeaders != nil {
+		for _, headerName := range c.RemoteIPHeaders {
+			ip, valid := c.validateHeader(c.requestHeader(headerName))
+			if valid {
+				return ip
+			}
+		}
+	}
+	return remoteIP.String()
+}
+
+func (c *Context) validateHeader(header string) (clientIP string, valid bool) {
+	if header == "" {
+		return "", false
+	}
+	items := strings.Split(header, ",")
+	for i := len(items) - 1; i >= 0; i-- {
+		ipStr := strings.TrimSpace(items[i])
+		ip := net.ParseIP(ipStr)
+		if ip == nil {
+			break
+		}
+
+		// X-Forwarded-For is appended by proxy
+		// Check IPs in reverse order and stop when find untrusted proxy
+		if (i == 0) || (!c.isTrustedProxy(ip)) {
+			return ipStr, true
+		}
+	}
+	return "", false
+}
+
+func (c *Context) isTrustedProxy(ip net.IP) bool {
+	if c.trustedCIDRs == nil {
+		return false
+	}
+	for _, cidr := range c.trustedCIDRs {
+		if cidr.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
 // RemoteIP parses the IP from Request.RemoteAddr, normalizes and returns the IP (without the port).
 func (c *Context) RemoteIP() string {
 	ip, _, err := net.SplitHostPort(strings.TrimSpace(c.Request.RemoteAddr))
@@ -214,4 +283,51 @@ func (c *Context) IsWebsocket() bool {
 
 func (c *Context) requestHeader(key string) string {
 	return c.Request.Header.Get(key)
+}
+
+/************************************/
+/***** GOLANG.ORG/X/NET/CONTEXT *****/
+/************************************/
+
+// Deadline returns that there is no deadline (ok==false) when c.Request has no Context.
+func (c *Context) Deadline() (deadline time.Time, ok bool) {
+	if c.Request == nil || c.Request.Context() == nil {
+		return
+	}
+	return c.Request.Context().Deadline()
+}
+
+// Done returns nil (chan which will wait forever) when c.Request has no Context.
+func (c *Context) Done() <-chan struct{} {
+	if c.Request == nil || c.Request.Context() == nil {
+		return nil
+	}
+	return c.Request.Context().Done()
+}
+
+// Err returns nil when c.Request has no Context.
+func (c *Context) Err() error {
+	if c.Request == nil || c.Request.Context() == nil {
+		return nil
+	}
+	return c.Request.Context().Err()
+}
+
+// Value returns the value associated with this context for key, or nil
+// if no value is associated with key. Successive calls to Value with
+// the same key returns the same result.
+func (c *Context) Value(key any) any {
+	if key == 0 {
+		return c.Request
+	}
+
+	if keyAsString, ok := key.(string); ok {
+		if val, exists := c.Get(keyAsString); exists {
+			return val
+		}
+	}
+	if c.Request == nil || c.Request.Context() == nil {
+		return nil
+	}
+	return c.Request.Context().Value(key)
 }

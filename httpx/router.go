@@ -1,9 +1,13 @@
 package httpx
 
-import "regexp"
+import (
+	"regexp"
+	"sync"
+)
 
 type Router struct {
 	IRoute
+	pool sync.Pool
 }
 
 func New() *Router {
@@ -13,11 +17,19 @@ func New() *Router {
 		root:     true,
 	}}
 	route.IRoute.engine = route
+	route.pool.New = func() any {
+		return route.allocateContext()
+	}
 	return route
 }
 
 func (router *Router) allocateContext() *Context {
-	return &Context{engine: router}
+	return &Context{
+		router:              router,
+		ForwardedByClientIP: true,
+		RemoteIPHeaders:     defaultRemoteIPHeaders,
+		trustedCIDRs:        defaultTrustedCIDRs,
+	}
 }
 
 func (router *Router) addRoute(method, path string, handlers HandlersChain) {
