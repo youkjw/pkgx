@@ -28,13 +28,13 @@ var (
 // abortIndex represents a typical value used in abort functions.
 const abortIndex int8 = math.MaxInt8 >> 1
 
-// HandlerFunc defines the handler used by middleware as return value.
+// HandlerFunc defines the Handler used by middleware as return value.
 type HandlerFunc func(*Context)
 
 // HandlersChain defines a HandlerFunc slice.
 type HandlersChain []HandlerFunc
 
-// Last returns the last handler in the chain. i.e. the last handler is the main one.
+// Last returns the last Handler in the chain. i.e. the last Handler is the main one.
 func (c HandlersChain) Last() HandlerFunc {
 	if length := len(c); length > 0 {
 		return c[length-1]
@@ -49,6 +49,7 @@ type Context struct {
 	router   *Router
 	index    int8
 	handlers HandlersChain
+	fullPath string
 
 	ForwardedByClientIP bool
 	RemoteIPHeaders     []string
@@ -58,6 +59,10 @@ type Context struct {
 	mu sync.RWMutex
 	// Keys is a key/value pair exclusively for the context of each request.
 	Keys map[string]any
+
+	params       *Params
+	Params       Params
+	skippedNodes *[]skippedNode
 }
 
 /************************************/
@@ -94,7 +99,7 @@ func (c *Context) Copy() *Context {
 /************************************/
 
 // Next should be used only inside middleware.
-// It executes the pending handlers in the chain inside the calling handler.
+// It executes the pending handlers in the chain inside the calling Handler.
 // See example in GitHub.
 func (c *Context) Next() {
 	c.index++
@@ -109,7 +114,7 @@ func (c *Context) IsAborted() bool {
 	return c.index >= abortIndex
 }
 
-// Abort prevents pending handlers from being called. Note that this will not stop the current handler.
+// Abort prevents pending handlers from being called. Note that this will not stop the current Handler.
 // Let's say you have an authorization middleware that validates that the current request is authorized.
 // If the authorization fails (ex: the password does not match), call Abort to ensure the remaining handlers
 // for this request are not called.

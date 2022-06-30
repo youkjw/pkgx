@@ -22,7 +22,7 @@ var (
 	modeName = env.DeployEnvDev
 )
 
-func init() {
+func InitDebug() {
 	switch {
 	case env.IsTest():
 		mode = testCode
@@ -71,12 +71,18 @@ func debugPrintRoute(httpMethod, absolutePath string, handlers HandlersChain) {
 	}
 }
 
+func debugPrintError(err error) {
+	if err != nil && IsDebugging() {
+		fmt.Fprintf(DefaultErrorWriter, "["+ModeName()+"] [ERROR] %v\n", err)
+	}
+}
+
 func debugPrint(format string, values ...any) {
 	if IsDebugging() {
 		if !strings.HasSuffix(format, "\n") {
 			format += "\n"
 		}
-		fmt.Fprintf(DefaultWriter, "["+ModeName()+"] "+format, values...)
+		fmt.Fprintf(DefaultWriter, "["+ModeName()+"]"+format, values...)
 	}
 }
 

@@ -11,9 +11,21 @@ type Router struct {
 	pool        sync.Pool
 	maxParams   uint16
 	maxSections uint16
+
+	// UseRawPath if enabled, the url.RawPath will be used to find parameters.
+	UseRawPath bool
+
+	// UnescapePathValues if true, the path value will be unescaped.
+	// If UseRawPath is false (by default), the UnescapePathValues effectively is true,
+	// as url.Path gonna be used, which is already unescaped.
+	UnescapePathValues bool
+
+	// RemoveExtraSlash a parameter can be parsed from the URL even with extra slashes.
+	// See the PR #1817 and issue #1644
+	RemoveExtraSlash bool
 }
 
-func New() *Router {
+func NewRouter() *Router {
 	route := &Router{IRoute: IRoute{
 		Handlers: nil,
 		basePath: "/",
@@ -38,7 +50,7 @@ func (router *Router) allocateContext() *Context {
 func (router *Router) addRoute(method, path string, handlers HandlersChain) {
 	assert(path[0] == '/', "path must begin with '/'")
 	assert(method != "", "HTTP method can not be empty")
-	assert(len(handlers) > 0, "there must be at least one handler")
+	assert(len(handlers) > 0, "there must be at least one Handler")
 
 	debugPrintRoute(method, path, handlers)
 
