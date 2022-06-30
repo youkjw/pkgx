@@ -7,7 +7,7 @@ import (
 )
 
 type Kv interface {
-	string | utils.IntV | time.Time
+	string | utils.NumberV | time.Time
 }
 
 type AvlTree[V Kv] struct {
