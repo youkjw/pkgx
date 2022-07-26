@@ -1,6 +1,8 @@
-package httpx
+package ehttp
 
 import (
+	"context"
+	"gitlab.cpp32.com/backend/epkg/web/ehttp/render"
 	"io/ioutil"
 	"math"
 	"net"
@@ -8,7 +10,6 @@ import (
 	"net/url"
 	"strings"
 	"sync"
-	"time"
 )
 
 var (
@@ -22,85 +23,63 @@ var (
 			Mask: net.IPMask{0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0},
 		},
 	}
-	defaultRemoteIPHeaders = []string{"X-Forwarded-For", "X-Real-IP"}
+	defaultProxyIPHeaders = []string{"X-Forwarded-For", "X-Real-IP"}
 )
 
-// abortIndex represents a typical value used in abort functions.
 const abortIndex int8 = math.MaxInt8 >> 1
 
-// HandlerFunc defines the handler used by middleware as return value.
-type HandlerFunc func(*Context)
-
-// HandlersChain defines a HandlerFunc slice.
-type HandlersChain []HandlerFunc
-
-// Last returns the last handler in the chain. i.e. the last handler is the main one.
-func (c HandlersChain) Last() HandlerFunc {
-	if length := len(c); length > 0 {
-		return c[length-1]
-	}
-	return nil
-}
+type (
+	HandlerFunc   func(*Context)
+	HandlersChain []HandlerFunc
+)
 
 type Context struct {
+	Log     Logger
 	Request *http.Request
-	Writer  responseWriter
+	Writer  ResponseWriter
 
-	Router   *Router
-	index    int8
-	handlers HandlersChain
-	fullPath string
-
-	ForwardedByClientIP bool
-	RemoteIPHeaders     []string
-	trustedCIDRs        []*net.IPNet
-
-	// This mutex protects Keys map.
-	mu sync.RWMutex
+	router *Router
+	// 流程控制索引
+	index int8
+	mu    sync.RWMutex
 	// Keys is a key/value pair exclusively for the context of each request.
 	Keys map[string]any
 
-	params       *Params
-	Params       Params
+	fullPath string
+	handlers HandlersChain
+
+	// c.Request.URL.Query
+	queryCache url.Values
+	// c.Request.PostForm
+	formCache url.Values
+
+	// SameSite allows a server to define a cookie attribute making it impossible for
+	// the browser to send this cookie along with cross-site requests.
+	sameSite http.SameSite
+
+	// path路径上param参数 eg. /:id/:name
+	// GetParam("id")|GetParam("name") 获取
+	params *Params
+	// 同上
+	// c.Request.URL.path Params
+	Params Params
+
+	// 路由查找时如有param类型时直接挑选匹配节点
 	skippedNodes *[]skippedNode
 }
 
-/************************************/
-/********** CONTEXT CREATION ********/
-/************************************/
-
 func (c *Context) reset() {
-	c.Writer = responseWriter{}
+	c.Writer = &ehttpWriter{}
 	c.handlers = nil
 	c.index = -1
-
+	c.sameSite = http.SameSiteDefaultMode
 	c.Keys = nil
+	c.fullPath = ""
+	c.Params = c.Params[:0]
+	*c.params = (*c.params)[:0]
+	*c.skippedNodes = (*c.skippedNodes)[:0]
 }
 
-// Copy returns a copy of the current context that can be safely used outside the request's scope.
-// This has to be used when the context has to be passed to a goroutine.
-func (c *Context) Copy() *Context {
-	cp := Context{
-		Writer:  c.Writer,
-		Request: c.Request,
-	}
-	cp.Writer.ResponseWriter = nil
-	cp.index = abortIndex
-	cp.handlers = nil
-	cp.Keys = map[string]any{}
-	for k, v := range c.Keys {
-		cp.Keys[k] = v
-	}
-	return &cp
-}
-
-/************************************/
-/*********** FLOW CONTROL ***********/
-/************************************/
-
-// Next should be used only inside middleware.
-// It executes the pending handlers in the chain inside the calling handler.
-// See example in GitHub.
 func (c *Context) Next() {
 	c.index++
 	for c.index < int8(len(c.handlers)) {
@@ -109,60 +88,127 @@ func (c *Context) Next() {
 	}
 }
 
-// IsAborted returns true if the current context was aborted.
 func (c *Context) IsAborted() bool {
 	return c.index >= abortIndex
 }
 
-// Abort prevents pending handlers from being called. Note that this will not stop the current handler.
-// Let's say you have an authorization middleware that validates that the current request is authorized.
-// If the authorization fails (ex: the password does not match), call Abort to ensure the remaining handlers
-// for this request are not called.
 func (c *Context) Abort() {
 	c.index = abortIndex
 }
 
-// AbortWithStatus calls `Abort()` and writes the headers with the specified status code.
-// For example, a failed attempt to authenticate a request could use: context.AbortWithStatus(401).
 func (c *Context) AbortWithStatus(code int) {
 	c.Status(code)
 	c.Writer.WriteHeaderNow()
 	c.Abort()
 }
 
-/************************************/
-/******** METADATA RENDERING ********/
-/************************************/
+func (c *Context) GetFullPath() string {
+	return c.fullPath
+}
 
-func (c *Context) Set(key string, value any) {
-	c.mu.Lock()
-	if c.Keys == nil {
-		c.Keys = make(map[string]any)
+func (c *Context) GetBody() ([]byte, error) {
+	return ioutil.ReadAll(c.Request.Body)
+}
+
+func (c *Context) GetQuery(key string) (string, bool) {
+	values := c.GetQueryArray(key)
+	if len(values) > 0 {
+		return values[0], true
 	}
-
-	c.Keys[key] = value
-	c.mu.Unlock()
+	return "", false
 }
 
-func (c *Context) Get(key string) (value any, exists bool) {
-	c.mu.RLock()
-	value, exists = c.Keys[key]
-	c.mu.RUnlock()
-	return
+func (c *Context) GetQueryArray(key string) []string {
+	c.initQueryCache()
+	if values, ok := c.queryCache[key]; ok {
+		return values
+	}
+	return []string{}
 }
 
-/************************************/
-/******** RESPONSE RENDERING ********/
-/************************************/
+func (c *Context) initQueryCache() {
+	if c.queryCache == nil {
+		if c.Request != nil {
+			c.queryCache = c.Request.URL.Query()
+		} else {
+			c.queryCache = make(url.Values)
+		}
+	}
+}
 
-// Status sets the HTTP response code.
+func (c *Context) GetPostForm(key string) (string, bool) {
+	values := c.GetPostFormArray(key)
+	if len(values) > 0 {
+		return values[0], true
+	}
+	return "", false
+}
+
+func (c *Context) GetPostFormArray(key string) []string {
+	c.initFormCache()
+	if values, ok := c.formCache[key]; ok {
+		return values
+	}
+	return []string{}
+}
+
+func (c *Context) initFormCache() {
+	if c.formCache == nil {
+		if c.Request != nil {
+			c.Request.ParseMultipartForm(c.router.MaxMultipartMemory)
+			c.formCache = c.Request.PostForm
+		} else {
+			c.formCache = make(url.Values)
+		}
+	}
+}
+
+func (c *Context) GetParam(key string) string {
+	return c.Params.ByName(key)
+}
+
+func (c *Context) Response(r render.Render) {
+	_, err := c.Writer.Write(r.Parse())
+	if err != nil {
+		c.Log.Errorf("http responseWrite write error:%v", err)
+	}
+	r.WriterContentType(c.Writer)
+	c.Writer.WriteHeaderNow()
+}
+
+func (c *Context) ResponseWithCode(code int) {
+	c.Status(code)
+	c.Writer.WriteHeaderNow()
+}
+
+func (c *Context) ResponseWithCodeMessage(code int, defaultMessage []byte) {
+	c.Status(code)
+	c.Header(HeaderContentType, ContentTypeTextPlain)
+	if c.Writer.Written() {
+		c.Writer.WriteHeaderNow()
+		return
+	}
+	c.Response(render.RenderPlain(defaultMessage))
+}
+
+// RedirectRequest 301｜307 重定向
+func (c *Context) RedirectRequest(url string) {
+	req := c.Request
+
+	code := http.StatusMovedPermanently // Permanent redirect, request with GET method
+	if req.Method != http.MethodGet {
+		code = http.StatusTemporaryRedirect
+	}
+	http.Redirect(c.Writer, req, url, code)
+	c.Writer.WriteHeaderNow()
+}
+
+// Status set http status code
 func (c *Context) Status(code int) {
 	c.Writer.WriteHeader(code)
 }
 
-// Header is an intelligent shortcut for c.Writer.Header().Set(key, value).
-// It writes a header in the response.
-// If value == "", this method removes the header `c.Writer.Header().Del(key)`
+// Header set http header field
 func (c *Context) Header(key, value string) {
 	if value == "" {
 		c.Writer.Header().Del(key)
@@ -171,90 +217,96 @@ func (c *Context) Header(key, value string) {
 	c.Writer.Header().Set(key, value)
 }
 
-// GetHeader returns value from request headers.
+// GetHeader get request header field
 func (c *Context) GetHeader(key string) string {
-	return c.requestHeader(key)
+	return c.Request.Header.Get(key)
 }
 
-// SetCookie adds a Set-Cookie header to the ResponseWriter's headers.
-// The provided cookie must have a valid Name. Invalid cookies may be
-// silently dropped.
-func (c *Context) SetCookie(name, value string, maxAge int, path, domain string, secure, httpOnly bool) {
-	if path == "" {
-		path = "/"
-	}
-	http.SetCookie(&c.Writer, &http.Cookie{
-		Name:     name,
-		Value:    url.QueryEscape(value),
-		MaxAge:   maxAge,
-		Path:     path,
-		Domain:   domain,
-		Secure:   secure,
-		HttpOnly: httpOnly,
-	})
-}
-
-// Cookie returns the named cookie provided in the request or
-// ErrNoCookie if not found. And return the named cookie is unescaped.
-// If multiple cookies match the given name, only one cookie will
-// be returned.
+// Cookie get request cookie field
 func (c *Context) Cookie(name string) (string, error) {
 	cookie, err := c.Request.Cookie(name)
 	if err != nil {
 		return "", err
 	}
-	val, _ := url.QueryUnescape(cookie.Value)
-	return val, nil
+	value, _ := url.QueryUnescape(cookie.Value)
+	return value, nil
 }
 
-// GetRawData returns stream data.
-func (c *Context) GetRawData() ([]byte, error) {
-	return ioutil.ReadAll(c.Request.Body)
+// SetCookie set response cookie
+func (c *Context) SetCookie(name, value string, maxAge int, path, domain string, secure, httpOnly bool) {
+	if len(path) == 0 {
+		path = "/"
+	}
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     name,
+		Value:    url.QueryEscape(value),
+		Path:     path,
+		Domain:   domain,
+		MaxAge:   maxAge,
+		Secure:   secure,
+		HttpOnly: httpOnly,
+		SameSite: c.sameSite,
+	})
+}
+
+// SetSameSite with cookie
+func (c *Context) SetSameSite(samesite http.SameSite) {
+	c.sameSite = samesite
+}
+
+func (c *Context) ContentType() string {
+	contextType := c.Request.Header.Get(HeaderContentType)
+	for i, char := range strings.TrimSpace(contextType) {
+		if char == ' ' || char == ';' {
+			return contextType[:i]
+		}
+	}
+	return contextType
+}
+
+func (c *Context) IsWebsocket() bool {
+	if strings.Contains(strings.ToLower(c.Request.Header.Get("Connection")), "upgrade") &&
+		strings.EqualFold(c.Request.Header.Get("Upgrade"), "websocket") {
+		return true
+	}
+	return false
 }
 
 func (c *Context) ClientIP() string {
 	remoteIP := net.ParseIP(c.RemoteIP())
-	if remoteIP == nil {
+	if len(remoteIP) == 0 {
 		return ""
 	}
 
-	if c.ForwardedByClientIP && c.RemoteIPHeaders != nil {
-		for _, headerName := range c.RemoteIPHeaders {
-			ip, valid := c.validateHeader(c.requestHeader(headerName))
-			if valid {
-				return ip
-			}
+	for _, proxyHeader := range defaultProxyIPHeaders {
+		ip, valid := validateIP(c.Request.Header.Get(proxyHeader))
+		if valid {
+			return ip
 		}
 	}
 	return remoteIP.String()
 }
 
-func (c *Context) validateHeader(header string) (clientIP string, valid bool) {
-	if header == "" {
+func validateIP(ip string) (clientIp string, valid bool) {
+	if len(ip) == 0 {
 		return "", false
 	}
-	items := strings.Split(header, ",")
-	for i := len(items) - 1; i >= 0; i-- {
+	items := strings.Split(ip, ",")
+	for i := range items {
 		ipStr := strings.TrimSpace(items[i])
-		ip := net.ParseIP(ipStr)
-		if ip == nil {
-			break
+		netIP := net.ParseIP(ipStr)
+		if netIP == nil {
+			continue
 		}
-
-		// X-Forwarded-For is appended by proxy
-		// Check IPs in reverse order and stop when find untrusted proxy
-		if (i == 0) || (!c.isTrustedProxy(ip)) {
+		if !isTrustedProxy(netIP) {
 			return ipStr, true
 		}
 	}
 	return "", false
 }
 
-func (c *Context) isTrustedProxy(ip net.IP) bool {
-	if c.trustedCIDRs == nil {
-		return false
-	}
-	for _, cidr := range c.trustedCIDRs {
+func isTrustedProxy(ip net.IP) bool {
+	for _, cidr := range defaultTrustedCIDRs {
 		if cidr.Contains(ip) {
 			return true
 		}
@@ -262,7 +314,6 @@ func (c *Context) isTrustedProxy(ip net.IP) bool {
 	return false
 }
 
-// RemoteIP parses the IP from Request.RemoteAddr, normalizes and returns the IP (without the port).
 func (c *Context) RemoteIP() string {
 	ip, _, err := net.SplitHostPort(strings.TrimSpace(c.Request.RemoteAddr))
 	if err != nil {
@@ -271,68 +322,26 @@ func (c *Context) RemoteIP() string {
 	return ip
 }
 
-// ContentType returns the Content-Type header of the request.
-func (c *Context) ContentType() string {
-	return filterFlags(c.requestHeader("Content-Type"))
+func (c *Context) Context() context.Context {
+	return c.Request.Context()
 }
 
-// IsWebsocket returns true if the request headers indicate that a websocket
-// handshake is being initiated by the client.
-func (c *Context) IsWebsocket() bool {
-	if strings.Contains(strings.ToLower(c.requestHeader("Connection")), "upgrade") &&
-		strings.EqualFold(c.requestHeader("Upgrade"), "websocket") {
-		return true
-	}
-	return false
+func (c *Context) NewContext() context.Context {
+	return context.Background()
 }
 
-func (c *Context) requestHeader(key string) string {
-	return c.Request.Header.Get(key)
+func (c *Context) Set(key string, value any) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.Keys == nil {
+		c.Keys = make(map[string]any)
+	}
+	c.Keys[key] = value
 }
 
-/************************************/
-/***** GOLANG.ORG/X/NET/CONTEXT *****/
-/************************************/
-
-// Deadline returns that there is no deadline (ok==false) when c.Request has no Context.
-func (c *Context) Deadline() (deadline time.Time, ok bool) {
-	if c.Request == nil || c.Request.Context() == nil {
-		return
-	}
-	return c.Request.Context().Deadline()
-}
-
-// Done returns nil (chan which will wait forever) when c.Request has no Context.
-func (c *Context) Done() <-chan struct{} {
-	if c.Request == nil || c.Request.Context() == nil {
-		return nil
-	}
-	return c.Request.Context().Done()
-}
-
-// Err returns nil when c.Request has no Context.
-func (c *Context) Err() error {
-	if c.Request == nil || c.Request.Context() == nil {
-		return nil
-	}
-	return c.Request.Context().Err()
-}
-
-// Value returns the value associated with this context for key, or nil
-// if no value is associated with key. Successive calls to Value with
-// the same key returns the same result.
-func (c *Context) Value(key any) any {
-	if key == 0 {
-		return c.Request
-	}
-
-	if keyAsString, ok := key.(string); ok {
-		if val, exists := c.Get(keyAsString); exists {
-			return val
-		}
-	}
-	if c.Request == nil || c.Request.Context() == nil {
-		return nil
-	}
-	return c.Request.Context().Value(key)
+func (c *Context) Get(key string) (value any, exists bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	value, exists = c.Keys[key]
+	return
 }

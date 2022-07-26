@@ -1,63 +1,63 @@
-package httpx
+package ehttp
 
 import (
+	"net/http"
 	"regexp"
 	"sync"
 )
 
+var (
+	// regEnLetter matches letters for http method name
+	regEnLetter = regexp.MustCompile("^[A-Z]+$")
+	// default Tree Size
+	defaultTreeSize = 32
+	// defaultMultipartMemory size
+	defaultMultipartMemory int64 = 32 << 20 //32MB
+)
+
 type Router struct {
 	IRouter
-	trees       methodTrees
-	pool        sync.Pool
-	maxParams   uint16
-	maxSections uint16
+	trees methodTrees
+	pool  sync.Pool
 
-	// UseRawPath if enabled, the url.RawPath will be used to find parameters.
-	UseRawPath bool
-
-	// UnescapePathValues if true, the path value will be unescaped.
-	// If UseRawPath is false (by default), the UnescapePathValues effectively is true,
-	// as url.Path gonna be used, which is already unescaped.
-	UnescapePathValues bool
-
-	// RemoveExtraSlash a parameter can be parsed from the URL even with extra slashes.
-	// See the PR #1817 and issue #1644
-	RemoveExtraSlash bool
+	// useRawPath if enabled, the url.RawPath will be used to find parameters.
+	useRawPath bool
+	// MaxMultipartMemory value of 'maxMemory' param that is given to http.Request's ParseMultipartForm
+	MaxMultipartMemory int64
+	// 记录所有路由中路径参数最多的数量
+	maxParams uint8
+	// 记录所有路由中路径节点最多的数量
+	maxSections uint8
 }
 
 func NewRouter() *Router {
-	Router := &Router{IRouter: IRouter{
-		Handlers: nil,
-		basePath: "/",
-		root:     true,
-	}}
-	Router.IRouter.Router = Router
-	Router.pool.New = func() any {
-		return Router.allocateContext()
+	r := &Router{
+		IRouter: IRouter{
+			Router:   nil,
+			basePath: "/",
+			Handlers: make(HandlersChain, 0, 8),
+		},
+		trees:              make(methodTrees, 0, defaultTreeSize),
+		MaxMultipartMemory: defaultMultipartMemory,
 	}
-	return Router
+	r.Router = r
+	r.pool.New = func() any {
+		return r.newContext()
+	}
+	return r
 }
 
-func (Router *Router) allocateContext() *Context {
-	v := make(Params, 0, Router.maxParams)
-	skippedNodes := make([]skippedNode, 0, Router.maxSections)
+func (Router *Router) newContext() *Context {
+	params := make(Params, 0, Router.maxParams)
+	sections := make([]skippedNode, 0, Router.maxSections)
 	return &Context{
-		Router:              Router,
-		params:              &v,
-		skippedNodes:        &skippedNodes,
-		ForwardedByClientIP: true,
-		RemoteIPHeaders:     defaultRemoteIPHeaders,
-		trustedCIDRs:        defaultTrustedCIDRs,
+		router:       Router,
+		params:       &params,
+		skippedNodes: &sections,
 	}
 }
 
 func (Router *Router) addRouter(method, path string, handlers HandlersChain) {
-	assert(path[0] == '/', "path must begin with '/'")
-	assert(method != "", "HTTP method can not be empty")
-	assert(len(handlers) > 0, "there must be at least one handler")
-
-	debugPrintRouter(method, path, handlers)
-
 	root := Router.trees.get(method)
 	if root == nil {
 		root = new(node)
@@ -67,37 +67,52 @@ func (Router *Router) addRouter(method, path string, handlers HandlersChain) {
 	root.addRouter(path, handlers)
 
 	// Update maxParams
-	if paramsCount := countParams(path); paramsCount > Router.maxParams {
+	if paramsCount := uint8(countParams(path)); paramsCount > Router.maxParams {
 		Router.maxParams = paramsCount
 	}
 
-	if sectionsCount := countSections(path); sectionsCount > Router.maxSections {
+	if sectionsCount := uint8(countSections(path)); sectionsCount > Router.maxSections {
 		Router.maxSections = sectionsCount
 	}
 }
 
-var (
-	// regEnLetter matches english letters for http method name
-	regEnLetter = regexp.MustCompile("^[A-Z]+$")
-)
+func (Router *Router) SetUseRawPath(b bool) {
+	Router.useRawPath = b
+}
+
+func (Router *Router) SetMaxMultipartMemory(size int64) {
+	Router.MaxMultipartMemory = size
+}
 
 type IRouters interface {
 	Use(...HandlerFunc) IRouters
 	Handle(string, string, ...HandlerFunc) IRouters
+	GET(string, ...HandlerFunc) IRouters
+	POST(string, ...HandlerFunc) IRouters
+	DELETE(string, ...HandlerFunc) IRouters
+	PUT(string, ...HandlerFunc) IRouters
+	OPTIONS(string, ...HandlerFunc) IRouters
+	HEAD(string, ...HandlerFunc) IRouters
 }
 
-// IRouter a prefix and an array of handlers (middleware).
 type IRouter struct {
-	Handlers HandlersChain
-	basePath string
 	Router   *Router
-	root     bool
+	basePath string
+	Handlers HandlersChain
 }
 
-// Use adds middleware to the group, see example code in GitHub.
+func (Router *IRouter) BasePath() string {
+	return Router.basePath
+}
+
 func (Router *IRouter) Use(middleware ...HandlerFunc) IRouters {
+	size := len(Router.Handlers) + len(middleware)
+	if size > int(abortIndex) {
+		panic("http handlers exceed the limit")
+		return Router
+	}
 	Router.Handlers = append(Router.Handlers, middleware...)
-	return Router.returnObj()
+	return Router
 }
 
 func (Router *IRouter) Handle(httpMethod, relativePath string, handlers ...HandlerFunc) IRouters {
@@ -108,28 +123,50 @@ func (Router *IRouter) Handle(httpMethod, relativePath string, handlers ...Handl
 }
 
 func (Router *IRouter) handle(httpMethod, relativePath string, handlers HandlersChain) IRouters {
-	absolutePath := Router.calculateAbsolutePath(relativePath)
+	absolutePath := Router.generateAbsolutePath(relativePath)
 	handlers = Router.combineHandlers(handlers)
 	Router.Router.addRouter(httpMethod, absolutePath, handlers)
-	return Router.returnObj()
+	return Router
 }
 
 func (Router *IRouter) combineHandlers(handlers HandlersChain) HandlersChain {
-	finalSize := len(Router.Handlers) + len(handlers)
-	assert(finalSize < int(abortIndex), "too many handlers")
-	mergedHandlers := make(HandlersChain, finalSize)
-	copy(mergedHandlers, Router.Handlers)
-	copy(mergedHandlers[len(Router.Handlers):], handlers)
-	return mergedHandlers
-}
-
-func (Router *IRouter) calculateAbsolutePath(relativePath string) string {
-	return joinPaths(Router.basePath, relativePath)
-}
-
-func (Router *IRouter) returnObj() IRouters {
-	if Router.root {
-		return Router.Router
+	size := len(Router.Handlers) + len(handlers)
+	if size > int(abortIndex) {
+		panic("http handlers exceed the limit")
 	}
-	return Router
+	mergerHandlers := make(HandlersChain, size)
+	copy(mergerHandlers, Router.Handlers)
+	copy(mergerHandlers[len(Router.Handlers):], handlers)
+	return mergerHandlers
+}
+
+func (Router *IRouter) generateAbsolutePath(relativePath string) string {
+	return joinPath(Router.basePath, relativePath)
+}
+
+func (Router *IRouter) POST(relativePath string, handlers ...HandlerFunc) IRouters {
+	return Router.Handle("POST", relativePath, handlers...)
+}
+
+func (Router *IRouter) GET(relativePath string, handlers ...HandlerFunc) IRouters {
+	return Router.Handle("GET", relativePath, handlers...)
+}
+
+func (Router *IRouter) DELETE(relativePath string, handlers ...HandlerFunc) IRouters {
+	return Router.Handle("DELETE", relativePath, handlers...)
+}
+
+// PUT is a shortcut for router.Handle("PUT", path, handle).
+func (Router *IRouter) PUT(relativePath string, handlers ...HandlerFunc) IRouters {
+	return Router.handle(http.MethodPut, relativePath, handlers)
+}
+
+// OPTIONS is a shortcut for router.Handle("OPTIONS", path, handle).
+func (Router *IRouter) OPTIONS(relativePath string, handlers ...HandlerFunc) IRouters {
+	return Router.handle(http.MethodOptions, relativePath, handlers)
+}
+
+// HEAD is a shortcut for router.Handle("HEAD", path, handle).
+func (Router *IRouter) HEAD(relativePath string, handlers ...HandlerFunc) IRouters {
+	return Router.handle(http.MethodHead, relativePath, handlers)
 }

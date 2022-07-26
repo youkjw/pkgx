@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be found
 // at https://github.com/julienschmidt/httpRouter/blob/master/LICENSE
 
-package httpx
+package ehttp
 
 import (
 	"bytes"
+	eutils "gitlab.cpp32.com/backend/epkg/utils"
 	"net/url"
-	"pkgx/utils"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -92,14 +92,14 @@ func (n *node) addChild(child *node) {
 
 func countParams(path string) uint16 {
 	var n uint16
-	s := utils.StringToBytes(path)
+	s := eutils.StringToBytes(path)
 	n += uint16(bytes.Count(s, strColon))
 	n += uint16(bytes.Count(s, strStar))
 	return n
 }
 
 func countSections(path string) uint16 {
-	s := utils.StringToBytes(path)
+	s := eutils.StringToBytes(path)
 	return uint16(bytes.Count(s, strSlash))
 }
 
@@ -181,7 +181,7 @@ walk:
 
 			n.children = []*node{&child}
 			// []byte for proper unicode char conversion, see #65
-			n.indices = utils.BytesToString([]byte{n.path[i]})
+			n.indices = eutils.BytesToString([]byte{n.path[i]})
 			n.path = path[:i]
 			n.handlers = nil
 			n.wildChild = false
@@ -214,7 +214,7 @@ walk:
 			// Otherwise insert it
 			if c != ':' && c != '*' && n.nType != catchAll {
 				// []byte for proper unicode char conversion, see #65
-				n.indices += utils.BytesToString([]byte{c})
+				n.indices += eutils.BytesToString([]byte{c})
 				child := &node{
 					fullPath: fullPath,
 				}
