@@ -21,7 +21,7 @@ type Node[V Kv] struct {
 	Value    any
 	Parent   *Node[V]
 	Children [2]*Node[V]
-	b        int8
+	b        int8 // 保存子节点的情况，无子节点或者满子节点为0，-1则只有左子节点，1则只有右子节点
 }
 
 func NewWith[V Kv](comparator utils.Comparator[V]) *AvlTree[V] {
@@ -149,20 +149,27 @@ func removeMin[V Kv](qp **Node[V], minKey *V, minVal *interface{}) bool {
 }
 
 func putFix[V Kv](c int8, t **Node[V]) bool {
+	// c即新增子节点的方向，-1为左, 1为右
 	s := *t
+	// 当前节点无子树，b = 0
 	if s.b == 0 {
 		s.b = c
 		return true
 	}
 
+	// 当前节点存在一个子树，但与当前新增的子节点的方向相反，b = -c即方向相反
+	// 则此时当前节点子节点刚好满了，则将b置为0
 	if s.b == -c {
 		s.b = 0
 		return false
 	}
 
+	// 当前节点b值与当前插入子节点的方向值c相等，说明
 	if s.Children[(c+1/2)].b == c {
+		// LL/RR型
 		s = singleRotate(c, s)
 	} else {
+		// LR/RL型
 		s = doubleRotate(c, s)
 	}
 	*t = s
@@ -183,7 +190,7 @@ func removeFix[V Kv](c int8, t **Node[V]) bool {
 
 	a := (c + 1) / 2
 	if s.Children[a].b == 0 {
-		s = rotate(c, s)
+		s = rotate[V](c, s)
 		s.b = -c
 		*t = s
 		return false
@@ -210,8 +217,10 @@ func singleRotate[V Kv](c int8, s *Node[V]) *Node[V] {
 func doubleRotate[V Kv](c int8, s *Node[V]) *Node[V] {
 	a := (c + 1) / 2
 	r := s.Children[a]
+	// 倒数第二层树旋转变成LL或者RR型
 	s.Children[a] = rotate[V](-c, s.Children[a])
-	p := rotate(c, s)
+	// 倒数第三层树旋转
+	p := rotate[V](c, s)
 
 	switch {
 	case p.b == c:

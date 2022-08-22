@@ -2,7 +2,6 @@ package eprobe
 
 import (
 	"context"
-	"gitlab.cpp32.com/backend/epkg/base/elog"
 	"net/http"
 	"net/url"
 	"sync"
@@ -119,14 +118,12 @@ func (s *eprobeServer) Detect(p Eprobe) error {
 		s.wg.Done()
 		select {
 		case <-s.ctx.Done():
-			elog.Warnf("Eprobe server closed on:%s", s.address)
 			err = s.Shutdown(s.ctx)
 		}
 	}()
 	s.wg.Wait()
 
 FIN:
-	elog.Warnf("Eprobe server listening on:%s", s.address)
 	time.Sleep(100 * time.Millisecond)
 	return err
 }
