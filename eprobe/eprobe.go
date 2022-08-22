@@ -105,7 +105,8 @@ func (s *eprobeServer) Detect(p Eprobe) error {
 		writer.WriteHeader(p.StartupProbe().State())
 	})
 
-	if s.handlerMultiplex.Load().(bool) {
+	handlerMultiplex := s.handlerMultiplex.Load()
+	if handlerMultiplex != nil && handlerMultiplex.(bool) {
 		goto FIN
 	}
 
@@ -129,7 +130,8 @@ FIN:
 }
 
 func (s *eprobeServer) Close() error {
-	if s.handlerMultiplex.Load().(bool) {
+	handlerMultiplex := s.handlerMultiplex.Load()
+	if handlerMultiplex != nil && handlerMultiplex.(bool) {
 		return nil
 	}
 	return s.Shutdown(s.ctx)
