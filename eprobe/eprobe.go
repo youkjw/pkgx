@@ -3,10 +3,10 @@ package eprobe
 import (
 	"context"
 	"gitlab.cpp32.com/backend/epkg/base/elog"
-	"go.uber.org/atomic"
 	"net/http"
 	"net/url"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -40,7 +40,7 @@ type eprobeServer struct {
 
 	*http.Server                    //server
 	handler          *http.ServeMux //handler
-	handlerMultiplex atomic.Bool    //handler复用
+	handlerMultiplex atomic.Value   //handler复用
 
 	address  string
 	endpoint *url.URL
@@ -106,7 +106,7 @@ func (s *eprobeServer) Detect(p Eprobe) error {
 		writer.WriteHeader(p.StartupProbe().State())
 	})
 
-	if s.handlerMultiplex.Load() {
+	if s.handlerMultiplex.Load().(bool) {
 		goto FIN
 	}
 
@@ -132,7 +132,7 @@ FIN:
 }
 
 func (s *eprobeServer) Close() error {
-	if s.handlerMultiplex.Load() {
+	if s.handlerMultiplex.Load().(bool) {
 		return nil
 	}
 	return s.Shutdown(s.ctx)
