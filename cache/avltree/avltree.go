@@ -6,17 +6,19 @@ import (
 	"time"
 )
 
-type Kv interface {
+// Value 可以比较的value, 用作对比排序
+type Value interface {
 	string | utils.Number | time.Time
 }
 
-type AvlTree[V Kv] struct {
+// AvlTree 二叉树结构
+type AvlTree[V Value] struct {
 	Root       *Node[V]
 	Comparator utils.Comparator[V]
 	size       int
 }
 
-type Node[V Kv] struct {
+type Node[V Value] struct {
 	Key      V
 	Value    any
 	Parent   *Node[V]
@@ -24,7 +26,7 @@ type Node[V Kv] struct {
 	b        int8 // 保存子节点的情况，无子节点或者满子节点为0，-1则只有左子节点，1则只有右子节点
 }
 
-func NewWith[V Kv](comparator utils.Comparator[V]) *AvlTree[V] {
+func NewWith[V Value](comparator utils.Comparator[V]) *AvlTree[V] {
 	return &AvlTree[V]{Comparator: comparator}
 }
 
@@ -130,7 +132,7 @@ func (avl *AvlTree[V]) remove(key V, qp **Node[V]) bool {
 	return false
 }
 
-func removeMin[V Kv](qp **Node[V], minKey *V, minVal *interface{}) bool {
+func removeMin[V Value](qp **Node[V], minKey *V, minVal *interface{}) bool {
 	q := *qp
 	if q.Children[0] == nil {
 		*minKey = q.Key
@@ -148,7 +150,7 @@ func removeMin[V Kv](qp **Node[V], minKey *V, minVal *interface{}) bool {
 	return false
 }
 
-func putFix[V Kv](c int8, t **Node[V]) bool {
+func putFix[V Value](c int8, t **Node[V]) bool {
 	// c即新增子节点的方向，-1为左, 1为右
 	s := *t
 	// 当前节点无子树，b = 0
@@ -176,7 +178,7 @@ func putFix[V Kv](c int8, t **Node[V]) bool {
 	return false
 }
 
-func removeFix[V Kv](c int8, t **Node[V]) bool {
+func removeFix[V Value](c int8, t **Node[V]) bool {
 	s := *t
 	if s.b == 0 {
 		s.b = c
@@ -206,7 +208,7 @@ func removeFix[V Kv](c int8, t **Node[V]) bool {
 }
 
 // 单旋转调整
-func singleRotate[V Kv](c int8, s *Node[V]) *Node[V] {
+func singleRotate[V Value](c int8, s *Node[V]) *Node[V] {
 	s.b = 0
 	s = rotate[V](c, s)
 	s.b = 0
@@ -214,7 +216,7 @@ func singleRotate[V Kv](c int8, s *Node[V]) *Node[V] {
 }
 
 // 双旋转调整
-func doubleRotate[V Kv](c int8, s *Node[V]) *Node[V] {
+func doubleRotate[V Value](c int8, s *Node[V]) *Node[V] {
 	a := (c + 1) / 2
 	r := s.Children[a]
 	// 倒数第二层树旋转变成LL或者RR型
@@ -245,7 +247,7 @@ func doubleRotate[V Kv](c int8, s *Node[V]) *Node[V] {
 // 2.将r节点的左子节点赋值给当前节点的右子节点, 赋值后当前节点右字节点不为空，则将当前节点右字节点的parent指向当前节点
 // 3.将当前节点赋值给r节点的左子节点，r节点的父节点修改当前节点的父节点，当前节点的父节点修改为r
 // 右旋原理同左转, 方向相反
-func rotate[V Kv](c int8, s *Node[V]) *Node[V] {
+func rotate[V Value](c int8, s *Node[V]) *Node[V] {
 	a := (c + 1) / 2
 	r := s.Children[a]
 	s.Children[a] = r.Children[a^1]
@@ -399,7 +401,7 @@ func (n *Node[V]) String() string {
 	return fmt.Sprintf("%v:%v", n.Key, n.Value)
 }
 
-func output[V Kv](node *Node[V], prefix string, isTail bool, str *string) {
+func output[V Value](node *Node[V], prefix string, isTail bool, str *string) {
 	if node.Children[1] != nil {
 		newPrefix := prefix
 		if isTail {
