@@ -85,8 +85,9 @@ func (tree *BTree[V]) isFull(node *Node[V]) bool {
 	return len(node.Entries) == tree.maxEntries()
 }
 
+// 找中间的关键字
 func (tree *BTree[V]) middle() int {
-	return (tree.m - 1) / 2 //防止数据越界
+	return (tree.m - 1) / 2 // 关键字原本就比子节点数减少1(m-1)
 }
 
 func (tree *BTree[V]) search(node *Node[V], key V) (index int, found bool) {
@@ -187,7 +188,7 @@ func (tree *BTree[V]) maxChildren() int {
 }
 
 func (tree *BTree[V]) minChildren() int {
-	return (tree.m + 1) / 2 //b-tree里children比关键词多1，相当于ceil()
+	return (tree.m + 1) / 2 //字节点范围 (m/2向上取整 - m)
 }
 
 func (tree *BTree[V]) splitRoot() {

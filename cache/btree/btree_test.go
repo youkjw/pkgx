@@ -6,7 +6,7 @@ import (
 )
 
 func TestBTree_Put(t *testing.T) {
-	tree := NewWith[int32](5, utils.IntComparator[int32])
+	tree := NewWith[int32](4, utils.IntComparator[int32])
 
 	tree.Put(0, 0)
 	tree.Put(1, 1)
