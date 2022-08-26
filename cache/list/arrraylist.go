@@ -8,7 +8,7 @@ const (
 	shrinkFactor     = float32(0.25)
 )
 
-type ArrayList[V any] struct {
+type ArrayList[V comparable] struct {
 	elements []V
 	size     int
 }
@@ -46,6 +46,50 @@ func (list *ArrayList[V]) Remove(index int) {
 	list.size--
 
 	list.shrink()
+}
+
+func (list *ArrayList[V]) Contains(value V) bool {
+	found := false
+	for index := 0; index < list.size; index++ {
+		if list.elements[index] == value {
+			found = true
+			break
+		}
+	}
+	return found
+}
+
+func (list *ArrayList[V]) Values() []V {
+	newElements := make([]V, list.size, list.size)
+	copy(newElements, list.elements[:list.size])
+	return newElements
+}
+
+func (list *ArrayList[V]) IndexOf(value V) int {
+	if list.size == 0 {
+		return -1
+	}
+
+	for index, element := range list.elements {
+		if element == value {
+			return index
+		}
+	}
+
+	return -1
+}
+
+func (list *ArrayList[V]) Empty() bool {
+	return list.size == 0
+}
+
+func (list *ArrayList[V]) Size() int {
+	return list.size
+}
+
+func (list *ArrayList[V]) Clear() {
+	list.size = 0
+	list.elements = make([]V, defaultSize, defaultSize)
 }
 
 func (list *ArrayList[V]) withinRange(index int) bool {

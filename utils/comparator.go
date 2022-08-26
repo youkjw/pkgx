@@ -35,7 +35,7 @@ func IntComparator[V Number](a, b V) int {
 	switch {
 	case a > b:
 		return 1
-	case b < a:
+	case a < b:
 		return -1
 	default:
 		return 0
