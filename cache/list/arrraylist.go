@@ -1,5 +1,7 @@
 package list
 
+import "pkgx/utils"
+
 const (
 	defaultSize = 128
 
@@ -94,6 +96,41 @@ func (list *ArrayList[V]) Clear() {
 
 func (list *ArrayList[V]) withinRange(index int) bool {
 	return index >= 0 && index < list.size
+}
+
+func (list *ArrayList[V]) Sort(comparable utils.Comparator[V]) {
+	if len(list.elements) < 2 {
+		return
+	}
+	utils.Sort[V](list.elements, comparable)
+}
+
+func (list *ArrayList[V]) Swap(i, j int) bool {
+	if !list.withinRange(i) || !list.withinRange(j) {
+		return false
+	}
+	list.elements[i], list.elements[j] = list.elements[j], list.elements[i]
+	return true
+}
+
+func (list *ArrayList[V]) Insert(index int, value V) {
+	if !list.withinRange(index) {
+		list.Add(value)
+		return
+	}
+
+	list.growth(list.size + 1)
+	list.size++
+	copy(list.elements[index:], list.elements[index+1:])
+	list.elements[index] = value
+}
+
+func (list *ArrayList[V]) Set(index int, value V) {
+	if !list.withinRange(index) {
+		list.Add(value)
+		return
+	}
+	list.elements[index] = value
 }
 
 func (list *ArrayList[V]) growth(n int) {
