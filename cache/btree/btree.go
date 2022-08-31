@@ -15,7 +15,7 @@ type BTree[V Value] struct {
 	Root       *Node[V]            //根节点
 	Comparator utils.Comparator[V] //用作对比排序
 	size       int                 //存储values的数量
-	m          int                 //子节点数，非叶子结点最多只有M个儿子，根结点的儿子数为[2, M]
+	m          int                 //子节点数，非叶子结点最多只有M个儿子，,最少有m/2个节点,根结点的儿子数为[2, M]
 }
 
 type Node[V Value] struct {
