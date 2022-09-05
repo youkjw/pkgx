@@ -193,7 +193,7 @@ func (tree *BTree[V]) maxChildren() int {
 }
 
 func (tree *BTree[V]) minChildren() int {
-	return (tree.m + 1) / 2 //字节点范围 (m/2向上取整 - m)
+	return (tree.m + 1) / 2 //节点数量范围 (m/2向上取整 - m)
 }
 
 func (tree *BTree[V]) splitRoot() {
@@ -230,8 +230,8 @@ func (tree *BTree[V]) splitNonRoot(node *Node[V]) {
 
 	// 非叶节点
 	if !tree.isLeaf(node) {
-		left.Children = append([]*Node[V](nil), tree.Root.Children[:middle+1]...)
-		right.Children = append([]*Node[V](nil), tree.Root.Children[middle+1:]...)
+		left.Children = append([]*Node[V](nil), node.Children[:middle+1]...)
+		right.Children = append([]*Node[V](nil), node.Children[middle+1:]...)
 		setParent[V](left.Children, left)
 		setParent[V](right.Children, right)
 	}
