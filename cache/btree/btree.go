@@ -141,8 +141,13 @@ func (tree *BTree[V]) searchRecursively(startNode *Node[V], key V) (node *Node[V
 	}
 }
 
-func (tree *BTree[V]) Remove() {
-
+func (tree *BTree[V]) Remove(key V) (value any, found bool) {
+	node, index, found := tree.searchRecursively(tree.Root, key)
+	if found {
+		tree.delete(node, index)
+		tree.size--
+	}
+	return nil, false
 }
 
 func (tree *BTree[V]) GetNode(key V) *Node[V] {

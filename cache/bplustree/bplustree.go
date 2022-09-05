@@ -85,7 +85,7 @@ func (tree *BPlusTree[V]) insertIntoLeaf(node *Node[V], record *Record[V]) bool 
 
 	// 叶子节点的key
 	keys := node.Key
-	keys = append(keys, nil)
+	node.Key = resize[V](keys, len(keys)+1)
 	copy(keys[:insertPosition], keys[insertPosition+1:])
 	keys[insertPosition] = record.Key
 
@@ -124,7 +124,7 @@ func (tree *BPlusTree[V]) searchLeaf(leaf *Leaf[V], key V) (index int, found boo
 	var mid int
 	for low <= high {
 		mid = (low + high) / 2
-		compare := tree.Comparator(key, leaf.Records[mid])
+		compare := tree.Comparator(key, leaf.Records[mid].Key)
 		switch {
 		case compare > 0:
 			low = mid + 1
@@ -272,7 +272,7 @@ func (tree *BPlusTree[V]) shouldSplitChild(node *Node[V]) bool {
 func (tree *BPlusTree[V]) appendKey(node *Node[V], key V) {
 	position, found := tree.searchNode(node, key)
 	if !found {
-		node.Key = append(node.Key, nil)
+		node.Key = resize[V](node.Key, len(node.Key)+1)
 		copy(node.Key[position+1:], node.Key[position:])
 		node.Key[position] = key
 	}
@@ -290,4 +290,10 @@ func getMaxKey[V Value](keys []V) V {
 
 func getRecordsMaxKey[V Value](records []*Record[V]) V {
 	return records[len(records)-1].Key
+}
+
+func resize[V Value](keys []V, n int) []V {
+	newKeys := make([]V, len(keys), n)
+	copy(newKeys, keys)
+	return newKeys
 }

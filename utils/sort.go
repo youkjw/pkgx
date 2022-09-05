@@ -20,5 +20,5 @@ func (s sortable[V]) Swap(i, j int) {
 }
 
 func (s sortable[V]) Less(i, j int) bool {
-	return s.comparator(i, j) < 0
+	return s.comparator(s.values[i], s.values[j]) < 0
 }
