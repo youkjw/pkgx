@@ -11,5 +11,9 @@ func TestNewWith(t *testing.T) {
 	tree.Put(2, 2)
 	tree.Put(3, 3)
 	tree.Put(4, 4)
-	tree.Put(5, 5)
+	tree.Put(6, 6)
+	tree.Put(7, 7)
+	tree.Put(8, 8)
+	tree.Put(9, 9)
+	tree.Put(10, 10)
 }
