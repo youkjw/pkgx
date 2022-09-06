@@ -9,6 +9,7 @@ import (
 func TestNewWith(t *testing.T) {
 	tree := NewWith[int](3, utils.IntComparator[int])
 	tree.Put(1, 1)
+	tree.Put(1, 1)
 	tree.Put(2, 2)
 	tree.Put(3, 3)
 	tree.Put(4, 4)
@@ -31,4 +32,17 @@ func TestNewWith(t *testing.T) {
 
 	fmt.Println(tree.Get(19))
 	fmt.Println(tree.Get(22))
+}
+
+func BenchmarkPut(b *testing.B) {
+	//mux := sync.Mutex{}
+	tree := NewWith[int](3, utils.IntComparator[int])
+	//tree.Put(1, 1)
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			//mux.Lock()
+			tree.Put(1, 1)
+			//mux.Unlock()
+		}
+	})
 }

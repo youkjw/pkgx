@@ -113,7 +113,7 @@ func (tree *BPlusTree[V]) insertIntoLeaf(node *Node[V], record *Record[V]) bool 
 	if found {
 		//update
 		node.Leaf.Records[insertPosition] = record
-		return true
+		return false
 	}
 
 	// record

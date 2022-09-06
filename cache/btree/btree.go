@@ -65,6 +65,7 @@ func (tree *BTree[V]) insertIntoLeaf(node *Node[V], entry *Entry[V]) bool {
 	insertPositon, found := tree.search(node, entry.Key)
 	if found {
 		node.Entries[insertPositon] = entry
+		return false
 	}
 	node.Entries = append(node.Entries, nil)
 	copy(node.Entries[:insertPositon], node.Entries[insertPositon+1:])
