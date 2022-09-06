@@ -1,6 +1,7 @@
 package bplustree
 
 import (
+	"fmt"
 	"pkgx/utils"
 	"testing"
 )
@@ -27,4 +28,7 @@ func TestNewWith(t *testing.T) {
 	tree.Put(18, 18)
 	tree.Put(19, 19)
 	tree.Put(20, 20)
+
+	fmt.Println(tree.Get(19))
+	fmt.Println(tree.Get(22))
 }

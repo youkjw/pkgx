@@ -31,15 +31,15 @@ type Node[V Value] struct {
 }
 
 type Leaf[V Value] struct {
-	Records []*Record[V]
+	Records []*Record[V] // 数据记录
 
-	Prev *Leaf[V]
-	Next *Leaf[V]
+	Prev *Leaf[V] //前项叶子地址
+	Next *Leaf[V] //后项叶子地址
 }
 
 type Record[V Value] struct {
-	Key   *V
-	Value any
+	Key   *V  //关键字
+	Value any //数据项
 }
 
 func NewWith[V Value](maxDegree int, comparator utils.Comparator[V]) *BPlusTree[V] {
@@ -59,6 +59,45 @@ func (tree *BPlusTree[V]) Put(key V, value any) {
 
 	if tree.insert(tree.Root, record) {
 		tree.size++
+	}
+}
+
+func (tree *BPlusTree[V]) Get(key V) (value any, found bool) {
+	// 查找node节点
+	node, index, found := tree.searchRecursively(tree.Root, &key)
+	if found {
+		return node.Leaf.Records[index].Value, true
+	}
+
+	// 查找叶节点
+	index, found = tree.searchLeaf(node.Leaf, &key)
+	if found {
+		return node.Leaf.Records[index].Value, true
+	}
+
+	return nil, false
+}
+
+func (tree *BPlusTree[V]) Range(key V, size int) (value []any) {
+	return nil
+}
+
+func (tree *BPlusTree[V]) searchRecursively(startNode *Node[V], key *V) (node *Node[V], index int, found bool) {
+	if tree.Empty() {
+		return nil, -1, false
+	}
+
+	node = startNode
+	for {
+		if tree.isLeaf(node) {
+			return node, index, found
+		}
+
+		index, found = tree.searchNode(node, key)
+		if index >= len(node.Key) {
+			index--
+		}
+		node = node.Children[index]
 	}
 }
 
@@ -98,10 +137,10 @@ func (tree *BPlusTree[V]) insertIntoLeaf(node *Node[V], record *Record[V]) bool 
 }
 
 func (tree *BPlusTree[V]) insertIntoInternal(node *Node[V], record *Record[V]) bool {
-	insertPosition, found := tree.searchNode(node, record.Key)
+	insertPosition, _ := tree.searchNode(node, record.Key)
 	if !tree.isLeaf(node) {
-		// 非叶子节点需要往下找插入点, 非叶子节点时未找到对应关键字时会返回多一个偏移值
-		if !found {
+		// 非叶子节点需要往下找插入点, 插入的key比当前节点最大值还大，非叶子节点时未找到对应关键字时会返回多一个偏移值
+		if insertPosition >= len(node.Key) {
 			insertPosition--
 		}
 		tree.insert(node.Children[insertPosition], record)
@@ -170,6 +209,19 @@ func (tree *BPlusTree[V]) maxLeaf() int {
 
 func (tree *BPlusTree[V]) minLeaf() int {
 	return tree.minChildren()
+}
+
+func (tree *BPlusTree[V]) Empty() bool {
+	return tree.size == 0
+}
+
+func (tree *BPlusTree[V]) Size() int {
+	return tree.size
+}
+
+func (tree *BPlusTree[V]) Clear() {
+	tree.Root = nil
+	tree.size = 0
 }
 
 func (tree *BPlusTree[V]) split(node *Node[V]) {
