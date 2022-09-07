@@ -1,13 +1,13 @@
-package ehttp
+package httpx
 
 import (
 	"context"
-	"gitlab.cpp32.com/backend/epkg/web/ehttp/render"
 	"io/ioutil"
 	"math"
 	"net"
 	"net/http"
 	"net/url"
+	"pkgx/httpx/render"
 	"strings"
 	"sync"
 )

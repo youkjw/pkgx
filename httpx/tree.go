@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be found
 // at https://github.com/julienschmidt/httpRouter/blob/master/LICENSE
 
-package ehttp
+package httpx
 
 import (
 	"bytes"
-	eutils "gitlab.cpp32.com/backend/epkg/utils"
 	"net/url"
+	eutils "pkgx/utils"
 	"strings"
 	"unicode"
 	"unicode/utf8"

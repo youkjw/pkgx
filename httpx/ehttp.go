@@ -1,9 +1,8 @@
-package ehttp
+package httpx
 
 import (
 	"context"
 	"github.com/google/uuid"
-	"gitlab.cpp32.com/backend/epkg/web"
 	"net/http"
 	"net/url"
 	"sync"
@@ -169,7 +168,7 @@ func (srv *HttpServer) Start(ctx context.Context) error {
 	defer func() {
 		srv.logger.Warnf("[HTTP] server closed on:%s, uuid: %s, serverName:%s version:%s err:%s", srv.address, srv.id, srv.name, srv.version, err.Error())
 	}()
-	addr, err = web.ExtractEndpoint(srv.address)
+	addr, err = ExtractEndpoint(srv.address)
 	if err != nil {
 		return err
 	}

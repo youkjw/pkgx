@@ -3,67 +3,64 @@ package bplustree
 import (
 	"fmt"
 	"pkgx/utils"
-	"time"
 )
 
-// Value 可以比较的value, 可以对比排序
-type Value interface {
-	string | utils.Number | time.Time
+type BPlusTree struct {
+	Root       *Node
+	Comparator utils.ComparatorInt8 //用作对比排序
+	size       int                  //存储values的数量
+	maxDegree  int                  //最大层级
 }
 
-type BPlusTree[V Value] struct {
-	Root       *Node[V]
-	Comparator utils.Comparator[V] //用作对比排序
-	size       int                 //存储values的数量
-	maxDegree  int                 //最大层级
-}
-
-type Node[V Value] struct {
-	Parent *Node[V]
+type Node struct {
+	Parent *Node
 	// 非叶子节点是*Node，叶子节点是*Entry, 最后一个指针挪到了lastOrNextNode
 	// 非叶子节点 len(Children)=len(Key)
 	// 叶子节点没有子树, len(Children)=0
-	Children []*Node[V] //对应子节点
-	Key      []*V       //对应关键字
+	Children []*Node //对应子节点
+	Key      []*int  //对应关键字
 	// 叶子节点关键字对应的值
-	Leaf *Leaf[V]
+	Leaf *Leaf
 	// 是否是叶子节点
 	isLeaf bool
 }
 
-type Leaf[V Value] struct {
-	Records []*Record[V] // 数据记录
+type Leaf struct {
+	Records []*Record // 数据记录
 
-	Prev *Leaf[V] //前项叶子地址
-	Next *Leaf[V] //后项叶子地址
+	Prev *Leaf //前项叶子地址
+	Next *Leaf //后项叶子地址
 }
 
-type Record[V Value] struct {
-	Key   *V  //关键字
-	Value any //数据项
+type Record struct {
+	Key   *int        //关键字
+	Value interface{} //数据项
 }
 
-func NewWith[V Value](maxDegree int, comparator utils.Comparator[V]) *BPlusTree[V] {
-	return &BPlusTree[V]{
+func NewWith(maxDegree int, comparator utils.ComparatorInt8) *BPlusTree {
+	return &BPlusTree{
 		Comparator: comparator,
 		maxDegree:  maxDegree,
 	}
 }
 
-func (tree *BPlusTree[V]) Put(key V, value any) {
-	record := &Record[V]{Key: &key, Value: value}
+func (tree *BPlusTree) Put(key int, value interface{}) {
+	record := &Record{Key: &key, Value: value}
 	if tree.Root == nil {
-		tree.Root = &Node[V]{Key: []*V{&key}, Children: []*Node[V]{}, Leaf: &Leaf[V]{Records: []*Record[V]{record}}, isLeaf: true}
-		tree.size++
+		if tree.Root != nil {
+			goto NonRoot
+		}
+		tree.Root = &Node{Key: []*int{&key}, Children: []*Node{}, Leaf: &Leaf{Records: []*Record{record}}, isLeaf: true}
 		return
 	}
 
+NonRoot:
 	if tree.insert(tree.Root, record) {
 		tree.size++
 	}
 }
 
-func (tree *BPlusTree[V]) Get(key V) (value any, found bool) {
+func (tree *BPlusTree) Get(key int) (value interface{}, found bool) {
 	// 查找node节点
 	node, index, found := tree.searchRecursively(tree.Root, &key)
 	if found {
@@ -79,15 +76,15 @@ func (tree *BPlusTree[V]) Get(key V) (value any, found bool) {
 	return nil, false
 }
 
-func (tree *BPlusTree[V]) Range(key V, size int) (value []any) {
+func (tree *BPlusTree) Range(key int, size int) (value []interface{}) {
 	return nil
 }
 
-func (tree *BPlusTree[V]) Remove(key V) {
+func (tree *BPlusTree) Remove(key int) {
 
 }
 
-func (tree *BPlusTree[V]) searchRecursively(startNode *Node[V], key *V) (node *Node[V], index int, found bool) {
+func (tree *BPlusTree) searchRecursively(startNode *Node, key *int) (node *Node, index int, found bool) {
 	if tree.Empty() {
 		return nil, -1, false
 	}
@@ -106,18 +103,19 @@ func (tree *BPlusTree[V]) searchRecursively(startNode *Node[V], key *V) (node *N
 	}
 }
 
-func (tree *BPlusTree[V]) insert(node *Node[V], record *Record[V]) (inserted bool) {
+func (tree *BPlusTree) insert(node *Node, record *Record) (inserted bool) {
 	if tree.isLeaf(node) {
 		return tree.insertIntoLeaf(node, record)
 	}
 	return tree.insertIntoInternal(node, record)
 }
 
-func (tree *BPlusTree[V]) insertIntoLeaf(node *Node[V], record *Record[V]) bool {
+func (tree *BPlusTree) insertIntoLeaf(node *Node, record *Record) bool {
 	insertPosition, found := tree.searchLeaf(node.Leaf, record.Key)
 	if found {
 		//update
 		node.Leaf.Records[insertPosition] = record
+		tree.size++
 		return false
 	}
 
@@ -141,7 +139,7 @@ func (tree *BPlusTree[V]) insertIntoLeaf(node *Node[V], record *Record[V]) bool 
 	return true
 }
 
-func (tree *BPlusTree[V]) insertIntoInternal(node *Node[V], record *Record[V]) bool {
+func (tree *BPlusTree) insertIntoInternal(node *Node, record *Record) bool {
 	insertPosition, _ := tree.searchNode(node, record.Key)
 	if !tree.isLeaf(node) {
 		// 非叶子节点需要往下找插入点, 插入的key比当前节点最大值还大，非叶子节点时未找到对应关键字时会返回多一个偏移值
@@ -153,7 +151,7 @@ func (tree *BPlusTree[V]) insertIntoInternal(node *Node[V], record *Record[V]) b
 	return true
 }
 
-func (tree *BPlusTree[V]) searchNode(node *Node[V], key *V) (index int, found bool) {
+func (tree *BPlusTree) searchNode(node *Node, key *int) (index int, found bool) {
 	low, high := 0, len(node.Key)-1
 	var mid int
 	for low <= high {
@@ -172,16 +170,16 @@ func (tree *BPlusTree[V]) searchNode(node *Node[V], key *V) (index int, found bo
 	return low, false
 }
 
-func (tree *BPlusTree[V]) searchLeaf(leaf *Leaf[V], key *V) (index int, found bool) {
+func (tree *BPlusTree) searchLeaf(leaf *Leaf, key *int) (index int, found bool) {
 	low, high := 0, len(leaf.Records)-1
 	var mid int
 	for low <= high {
 		mid = (low + high) / 2
 		if leaf.Records[mid].Key == nil {
-			b := leaf.Records[mid]
-			fmt.Println(b)
-			a := leaf.Records[mid].Key
+			a := leaf.Records[mid]
 			fmt.Println(a)
+			b := leaf.Records[mid].Key
+			fmt.Println(b)
 			panic("leaf.Records is nil")
 		}
 		compare := tree.Comparator(*key, *leaf.Records[mid].Key)
@@ -198,45 +196,45 @@ func (tree *BPlusTree[V]) searchLeaf(leaf *Leaf[V], key *V) (index int, found bo
 	return low, false
 }
 
-func (tree *BPlusTree[V]) isLeaf(node *Node[V]) bool {
+func (tree *BPlusTree) isLeaf(node *Node) bool {
 	return node.isLeaf
 }
 
-func (tree *BPlusTree[V]) minChildren() int {
+func (tree *BPlusTree) minChildren() int {
 	return (tree.maxDegree + 1) / 2 //节点数量范围 (m/2向上取整 - m)
 }
 
-func (tree *BPlusTree[V]) maxChildren() int {
+func (tree *BPlusTree) maxChildren() int {
 	return tree.maxDegree
 }
 
 // 找中间的关键字
-func (tree *BPlusTree[V]) middle() int {
+func (tree *BPlusTree) middle() int {
 	return (tree.maxDegree + 1) / 2
 }
 
-func (tree *BPlusTree[V]) maxLeaf() int {
+func (tree *BPlusTree) maxLeaf() int {
 	return tree.maxChildren()
 }
 
-func (tree *BPlusTree[V]) minLeaf() int {
+func (tree *BPlusTree) minLeaf() int {
 	return tree.minChildren()
 }
 
-func (tree *BPlusTree[V]) Empty() bool {
+func (tree *BPlusTree) Empty() bool {
 	return tree.size == 0
 }
 
-func (tree *BPlusTree[V]) Size() int {
+func (tree *BPlusTree) Size() int {
 	return tree.size
 }
 
-func (tree *BPlusTree[V]) Clear() {
+func (tree *BPlusTree) Clear() {
 	tree.Root = nil
 	tree.size = 0
 }
 
-func (tree *BPlusTree[V]) split(node *Node[V]) {
+func (tree *BPlusTree) split(node *Node) {
 	if (!tree.isLeaf(node) && !tree.shouldSplitChild(node)) || (tree.isLeaf(node) && !tree.shouldSplitLeaf(node)) {
 		return
 	}
@@ -249,17 +247,17 @@ func (tree *BPlusTree[V]) split(node *Node[V]) {
 	tree.splitNonRoot(node)
 }
 
-func (tree *BPlusTree[V]) splitRoot() {
+func (tree *BPlusTree) splitRoot() {
 	node := tree.Root
 	middle := tree.middle()
-	left := &Node[V]{}
-	right := &Node[V]{}
+	left := &Node{}
+	right := &Node{}
 
 	// 根节点是叶子节点
 	if tree.isLeaf(node) {
 		leaf := node.Leaf
-		leftLeaf := &Leaf[V]{Records: append([]*Record[V](nil), leaf.Records[:middle+1]...), Prev: node.Leaf.Prev}
-		rightLeaf := &Leaf[V]{Records: append([]*Record[V](nil), leaf.Records[middle+1:]...), Prev: leftLeaf, Next: node.Leaf.Next}
+		leftLeaf := &Leaf{Records: append([]*Record(nil), leaf.Records[:middle+1]...), Prev: node.Leaf.Prev}
+		rightLeaf := &Leaf{Records: append([]*Record(nil), leaf.Records[middle+1:]...), Prev: leftLeaf, Next: node.Leaf.Next}
 		leftLeaf.Next = rightLeaf
 		tree.appendKey(node, getRecordsMaxKey(leftLeaf.Records))
 		tree.appendKey(node, getRecordsMaxKey(rightLeaf.Records))
@@ -270,19 +268,19 @@ func (tree *BPlusTree[V]) splitRoot() {
 		right.Leaf = rightLeaf
 	} else {
 		children := node.Children
-		left.Children = append([]*Node[V](nil), children[:middle+1]...)
-		right.Children = append([]*Node[V](nil), children[middle+1:]...)
+		left.Children = append([]*Node(nil), children[:middle+1]...)
+		right.Children = append([]*Node(nil), children[middle+1:]...)
 		setParent(left.Children, left)
 		setParent(right.Children, right)
 	}
 
-	left.Key = append([]*V(nil), node.Key[:middle+1]...)
-	right.Key = append([]*V(nil), node.Key[middle+1:]...)
+	left.Key = append([]*int(nil), node.Key[:middle+1]...)
+	right.Key = append([]*int(nil), node.Key[middle+1:]...)
 
 	// 新root节点
-	newRoot := &Node[V]{
-		Children: []*Node[V]{left, right},
-		Key:      []*V{getMaxKey(left.Key), getMaxKey(right.Key)},
+	newRoot := &Node{
+		Children: []*Node{left, right},
+		Key:      []*int{getMaxKey(left.Key), getMaxKey(right.Key)},
 	}
 
 	// 将左 右2路节点父节点设置为新root节点
@@ -291,17 +289,17 @@ func (tree *BPlusTree[V]) splitRoot() {
 	tree.Root = newRoot
 }
 
-func (tree *BPlusTree[V]) splitNonRoot(node *Node[V]) {
+func (tree *BPlusTree) splitNonRoot(node *Node) {
 	middle := tree.middle()
 	parent := node.Parent
 
-	left := &Node[V]{Parent: parent}
-	right := &Node[V]{Parent: parent}
+	left := &Node{Parent: parent}
+	right := &Node{Parent: parent}
 	// 叶子节点
 	if tree.isLeaf(node) {
 		leaf := node.Leaf
-		leftLeaf := &Leaf[V]{Records: append([]*Record[V](nil), leaf.Records[:middle+1]...), Prev: node.Leaf.Prev}
-		rightLeaf := &Leaf[V]{Records: append([]*Record[V](nil), leaf.Records[middle+1:]...), Prev: leftLeaf, Next: node.Leaf.Next}
+		leftLeaf := &Leaf{Records: append([]*Record(nil), leaf.Records[:middle+1]...), Prev: node.Leaf.Prev}
+		rightLeaf := &Leaf{Records: append([]*Record(nil), leaf.Records[middle+1:]...), Prev: leftLeaf, Next: node.Leaf.Next}
 		leftLeaf.Next = rightLeaf
 
 		left.isLeaf = true
@@ -310,14 +308,14 @@ func (tree *BPlusTree[V]) splitNonRoot(node *Node[V]) {
 		right.Leaf = rightLeaf
 	} else {
 		children := node.Children
-		left.Children = append([]*Node[V](nil), children[:middle+1]...)
-		right.Children = append([]*Node[V](nil), children[middle+1:]...)
+		left.Children = append([]*Node(nil), children[:middle+1]...)
+		right.Children = append([]*Node(nil), children[middle+1:]...)
 		setParent(left.Children, left)
 		setParent(right.Children, right)
 	}
 
-	left.Key = append([]*V(nil), node.Key[:middle+1]...)
-	right.Key = append([]*V(nil), node.Key[middle+1:]...)
+	left.Key = append([]*int(nil), node.Key[:middle+1]...)
+	right.Key = append([]*int(nil), node.Key[middle+1:]...)
 	tree.appendKey(parent, getMaxKey(left.Key))
 	tree.appendKey(parent, getMaxKey(right.Key))
 
@@ -330,15 +328,15 @@ func (tree *BPlusTree[V]) splitNonRoot(node *Node[V]) {
 	tree.split(parent)
 }
 
-func (tree *BPlusTree[V]) shouldSplitLeaf(node *Node[V]) bool {
+func (tree *BPlusTree) shouldSplitLeaf(node *Node) bool {
 	return len(node.Leaf.Records) > tree.maxLeaf()
 }
 
-func (tree *BPlusTree[V]) shouldSplitChild(node *Node[V]) bool {
+func (tree *BPlusTree) shouldSplitChild(node *Node) bool {
 	return len(node.Children) > tree.maxChildren()
 }
 
-func (tree *BPlusTree[V]) appendKey(node *Node[V], key *V) {
+func (tree *BPlusTree) appendKey(node *Node, key *int) {
 	position, found := tree.searchNode(node, key)
 	if !found {
 		node.Key = append(node.Key, nil)
@@ -347,7 +345,7 @@ func (tree *BPlusTree[V]) appendKey(node *Node[V], key *V) {
 	}
 }
 
-func (tree *BPlusTree[V]) setParentKeyRecursively(parent *Node[V], node *Node[V], key *V) {
+func (tree *BPlusTree) setParentKeyRecursively(parent *Node, node *Node, key *int) {
 	insertPosition, found := findNodePosition(parent.Children, node)
 	if found && tree.Comparator(*parent.Key[insertPosition], *key) < 0 {
 		parent.Key[insertPosition] = key
@@ -357,13 +355,13 @@ func (tree *BPlusTree[V]) setParentKeyRecursively(parent *Node[V], node *Node[V]
 	}
 }
 
-func setParent[V Value](nodes []*Node[V], parent *Node[V]) {
+func setParent(nodes []*Node, parent *Node) {
 	for _, node := range nodes {
 		node.Parent = parent
 	}
 }
 
-func findNodePosition[V Value](childrens []*Node[V], node *Node[V]) (index int, found bool) {
+func findNodePosition(childrens []*Node, node *Node) (index int, found bool) {
 	for sindex, snode := range childrens {
 		if snode == node {
 			return sindex, true
@@ -372,10 +370,10 @@ func findNodePosition[V Value](childrens []*Node[V], node *Node[V]) (index int, 
 	return -1, false
 }
 
-func getMaxKey[V Value](keys []*V) *V {
+func getMaxKey(keys []*int) *int {
 	return keys[len(keys)-1]
 }
 
-func getRecordsMaxKey[V Value](records []*Record[V]) *V {
+func getRecordsMaxKey(records []*Record) *int {
 	return records[len(records)-1].Key
 }

@@ -53,3 +53,16 @@ func TimeComparator(a, b time.Time) int {
 		return 0
 	}
 }
+
+type ComparatorInt8 func(a, b int) int
+
+func Int8Comparator(a, b int) int {
+	switch {
+	case a > b:
+		return 1
+	case a < b:
+		return -1
+	default:
+		return 0
+	}
+}

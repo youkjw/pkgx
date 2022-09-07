@@ -1,21 +1,19 @@
-package btree
+package bplustree
 
 import (
+	"fmt"
 	"pkgx/utils"
 	"testing"
 )
 
-func TestBTree_Put(t *testing.T) {
-	tree := NewWith[int32](4, utils.IntComparator[int32])
-
-	tree.Put(0, 0)
+func TestNewWith(t *testing.T) {
+	tree := NewWith(3, utils.Int8Comparator)
 	tree.Put(1, 1)
 	tree.Put(2, 2)
 	tree.Put(3, 3)
 	tree.Put(4, 4)
 	tree.Put(5, 5)
 	tree.Put(6, 6)
-
 	tree.Put(7, 7)
 	tree.Put(8, 8)
 	tree.Put(9, 9)
@@ -30,12 +28,14 @@ func TestBTree_Put(t *testing.T) {
 	tree.Put(18, 18)
 	tree.Put(19, 19)
 	tree.Put(20, 20)
-	tree.Put(21, 21)
+
+	fmt.Println(tree.Get(19))
+	fmt.Println(tree.Get(22))
 }
 
 func BenchmarkPut(b *testing.B) {
 	//mux := sync.Mutex{}
-	tree := NewWith[int](3, utils.IntComparator[int])
+	tree := NewWith(3, utils.Int8Comparator)
 	//tree.Put(1, 1)
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {

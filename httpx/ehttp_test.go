@@ -1,11 +1,11 @@
-package ehttp
+package httpx
 
 import (
 	"context"
 	"fmt"
-	"gitlab.cpp32.com/backend/epkg/web/ehttp/render"
 	"os"
 	"os/signal"
+	"pkgx/httpx/render"
 	"syscall"
 	"testing"
 )

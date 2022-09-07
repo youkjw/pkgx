@@ -2,13 +2,13 @@ package middleware
 
 import (
 	"fmt"
-	"gitlab.cpp32.com/backend/epkg/web/ehttp"
 	"net/http"
+	"pkgx/httpx"
 	"runtime/debug"
 )
 
-func Recovery() ehttp.HandlerFunc {
-	return func(c *ehttp.Context) {
+func Recovery() httpx.HandlerFunc {
+	return func(c *httpx.Context) {
 		defer func() {
 			if err := recover(); err != nil {
 				stack := string(debug.Stack())
