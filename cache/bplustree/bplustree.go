@@ -82,6 +82,10 @@ func (tree *BPlusTree[V]) Range(key V, size int) (value []any) {
 	return nil
 }
 
+func (tree *BPlusTree[V]) Remove(key V) {
+
+}
+
 func (tree *BPlusTree[V]) searchRecursively(startNode *Node[V], key *V) (node *Node[V], index int, found bool) {
 	if tree.Empty() {
 		return nil, -1, false
