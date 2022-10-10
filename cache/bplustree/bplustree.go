@@ -1,8 +1,8 @@
 package bplustree
 
 import (
-	"fmt"
 	"pkgx/utils"
+	"sync"
 	"time"
 )
 
@@ -29,6 +29,7 @@ type Node[V Value] struct {
 	Leaf *Leaf[V]
 	// 是否是叶子节点
 	isLeaf bool
+	lock   sync.RWMutex
 }
 
 type Leaf[V Value] struct {
@@ -36,6 +37,7 @@ type Leaf[V Value] struct {
 
 	Prev *Leaf[V] //前项叶子地址
 	Next *Leaf[V] //后项叶子地址
+	lock sync.RWMutex
 }
 
 type Record[V Value] struct {
@@ -115,9 +117,11 @@ func (tree *BPlusTree[V]) insert(node *Node[V], record *Record[V]) (inserted boo
 
 func (tree *BPlusTree[V]) insertIntoLeaf(node *Node[V], record *Record[V]) bool {
 	insertPosition, found := tree.searchLeaf(node.Leaf, record.Key)
+	node.Leaf.lock.Lock()
 	if found {
 		//update
 		node.Leaf.Records[insertPosition] = record
+		node.Leaf.lock.Unlock()
 		return false
 	}
 
@@ -126,11 +130,14 @@ func (tree *BPlusTree[V]) insertIntoLeaf(node *Node[V], record *Record[V]) bool 
 	leaf.Records = append(leaf.Records, nil)
 	copy(leaf.Records[:insertPosition], leaf.Records[insertPosition+1:])
 	leaf.Records[insertPosition] = record
+	node.Leaf.lock.Unlock()
 
 	// 叶子节点的key
+	node.lock.Lock()
 	node.Key = append(node.Key, nil)
 	copy(node.Key[:insertPosition], node.Key[insertPosition+1:])
 	node.Key[insertPosition] = record.Key
+	node.lock.Unlock()
 
 	// 设置parent的key
 	if node.Parent != nil {
@@ -156,6 +163,8 @@ func (tree *BPlusTree[V]) insertIntoInternal(node *Node[V], record *Record[V]) b
 func (tree *BPlusTree[V]) searchNode(node *Node[V], key *V) (index int, found bool) {
 	low, high := 0, len(node.Key)-1
 	var mid int
+	node.lock.RLock()
+	defer node.lock.RUnlock()
 	for low <= high {
 		mid = (low + high) / 2
 		compare := tree.Comparator(*key, *node.Key[mid])
@@ -175,15 +184,10 @@ func (tree *BPlusTree[V]) searchNode(node *Node[V], key *V) (index int, found bo
 func (tree *BPlusTree[V]) searchLeaf(leaf *Leaf[V], key *V) (index int, found bool) {
 	low, high := 0, len(leaf.Records)-1
 	var mid int
+	leaf.lock.RLock()
+	defer leaf.lock.RUnlock()
 	for low <= high {
 		mid = (low + high) / 2
-		if leaf.Records[mid].Key == nil {
-			b := leaf.Records[mid]
-			fmt.Println(b)
-			a := leaf.Records[mid].Key
-			fmt.Println(a)
-			panic("leaf.Records is nil")
-		}
 		compare := tree.Comparator(*key, *leaf.Records[mid].Key)
 		switch {
 		case compare > 0:
@@ -350,7 +354,9 @@ func (tree *BPlusTree[V]) appendKey(node *Node[V], key *V) {
 func (tree *BPlusTree[V]) setParentKeyRecursively(parent *Node[V], node *Node[V], key *V) {
 	insertPosition, found := findNodePosition(parent.Children, node)
 	if found && tree.Comparator(*parent.Key[insertPosition], *key) < 0 {
+		parent.lock.Lock()
 		parent.Key[insertPosition] = key
+		parent.lock.Unlock()
 		if parent.Parent != nil {
 			tree.setParentKeyRecursively(parent.Parent, parent, key)
 		}
