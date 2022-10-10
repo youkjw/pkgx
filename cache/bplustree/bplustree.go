@@ -125,14 +125,14 @@ func (tree *BPlusTree[V]) insertIntoLeaf(node *Node[V], record *Record[V]) bool 
 		return false
 	}
 
-	// record
+	// 写入叶子节点records
 	leaf := node.Leaf
 	leaf.Records = append(leaf.Records, nil)
 	copy(leaf.Records[:insertPosition], leaf.Records[insertPosition+1:])
 	leaf.Records[insertPosition] = record
 	node.Leaf.lock.Unlock()
 
-	// 叶子节点的key
+	// 增加叶子节点的key
 	node.lock.Lock()
 	node.Key = append(node.Key, nil)
 	copy(node.Key[:insertPosition], node.Key[insertPosition+1:])
@@ -210,6 +210,7 @@ func (tree *BPlusTree[V]) minChildren() int {
 	return (tree.maxDegree + 1) / 2 //节点数量范围 (m/2向上取整 - m)
 }
 
+// 获取树的最大层级
 func (tree *BPlusTree[V]) maxChildren() int {
 	return tree.maxDegree
 }
@@ -240,6 +241,7 @@ func (tree *BPlusTree[V]) Clear() {
 	tree.size = 0
 }
 
+// 分裂
 func (tree *BPlusTree[V]) split(node *Node[V]) {
 	if (!tree.isLeaf(node) && !tree.shouldSplitChild(node)) || (tree.isLeaf(node) && !tree.shouldSplitLeaf(node)) {
 		return
