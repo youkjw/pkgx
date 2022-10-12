@@ -1,7 +1,10 @@
 package bplustree
 
 import (
+	"bytes"
+	"fmt"
 	"pkgx/utils"
+	"strings"
 	"sync"
 	"time"
 )
@@ -224,10 +227,14 @@ func (tree *BPlusTree[V]) delete(node *Node[V], index int) (value any) {
 		value = leaf.Records[index]
 		leaf.deleteRecord(index)
 		leaf.lock.Unlock()
+		// 获取剩下key的最大值
+		maxKey := getMaxKey(node.Key)
+		if maxKey != nil {
+			// 修改非叶子节点上的最大key
+			tree.replaceParentKeyRecursively(node.Parent, node, key, maxKey)
+		}
 		// 重新平衡
 		tree.rebalance(node, key)
-		// 针对父节点的删除
-		tree.deleteNode(node)
 	}
 	return
 }
@@ -288,17 +295,41 @@ func (tree *BPlusTree[V]) rebalance(node *Node[V], deletedKey *V) {
 	if rightSibling != nil {
 		// 存在右兄弟节点，但右兄弟节点不富有，合并 [当前节点所有关键字]、[当前节点对应父节点位置-1的关键字]、[右节点的所有关键字]
 		node.Key = append(node.Key, rightSibling.Key...)
+		if tree.isLeaf(node) {
+			// 叶子节点调整leaf
+			leaf := node.Leaf
+			rightSiblingLeaf := rightSibling.Leaf
+			leaf.Records = append(leaf.Records, rightSiblingLeaf.Records...)
+			leaf.Next = rightSiblingLeaf.Next
+		}
 		deletedKey = node.Parent.Key[rightSiblingIndex-1]
 		node.Parent.deleteKey(rightSiblingIndex - 1)                       // 删除掉当前节点对应父节点位置-1的关键字
 		tree.appendChildren(node.Parent.Children[rightSiblingIndex], node) // 向右合并，将当前节点的子节点和右兄弟节点的子节点合并，
 		node.Parent.deleteChild(rightSiblingIndex)                         // 删除掉当前节对应父节点的右兄弟节点
+		// 合并后调整非叶子节点的关键字
+		maxKey := getMaxKey(node.Key)
+		if maxKey != nil {
+			tree.replaceParentKeyRecursively(node.Parent, node, deletedKey, maxKey)
+		}
 	} else if leftSibling != nil {
 		// merge with left sibling
 		node.Key = append(leftSibling.Key, node.Key...)
+		if tree.isLeaf(node) {
+			// 叶子节点调整leaf
+			leaf := node.Leaf
+			leftSiblingLeaf := leftSibling.Leaf
+			leaf.Records = append(leftSiblingLeaf.Records, leaf.Records...)
+			leaf.Prev = leftSiblingLeaf.Prev
+		}
 		deletedKey = node.Parent.Key[leftSiblingIndex]
 		node.Parent.deleteKey(leftSiblingIndex)
 		tree.prependChildren(node.Parent.Children[leftSiblingIndex], node)
 		node.Parent.deleteChild(leftSiblingIndex)
+		// 合并后调整非叶子节点的关键字
+		maxKey := getMaxKey(node.Key)
+		if maxKey != nil {
+			tree.replaceParentKeyRecursively(node.Parent, node, deletedKey, maxKey)
+		}
 	}
 
 	// 当前调整节点的父节点是根节点并且根节点没有关键字, 则将当前节点提升为根节点
@@ -307,6 +338,9 @@ func (tree *BPlusTree[V]) rebalance(node *Node[V], deletedKey *V) {
 		node.Parent = nil
 		return
 	}
+
+	// 由于父节点经过调整，不确定是否仍然富有，在以父节点为调整节点做平衡
+	tree.rebalance(node.Parent, deletedKey)
 }
 
 func (tree *BPlusTree[V]) isLeaf(node *Node[V]) bool {
@@ -472,6 +506,18 @@ func (tree *BPlusTree[V]) setParentKeyRecursively(parent *Node[V], node *Node[V]
 	}
 }
 
+func (tree *BPlusTree[V]) replaceParentKeyRecursively(parent *Node[V], node *Node[V], oldKey *V, newKey *V) {
+	insertPosition, found := findNodePosition(parent.Children, node)
+	if found && tree.Comparator(*parent.Key[insertPosition], *oldKey) == 0 {
+		parent.lock.Lock()
+		parent.Key[insertPosition] = newKey
+		parent.lock.Unlock()
+		if parent.Parent != nil {
+			tree.replaceParentKeyRecursively(parent.Parent, parent, oldKey, newKey)
+		}
+	}
+}
+
 func (tree *BPlusTree[V]) leftSibling(node *Node[V], Key *V) (*Node[V], int) {
 	if node.Parent != nil {
 		index, _ := tree.searchNode(node.Parent, Key)
@@ -503,6 +549,28 @@ func (tree *BPlusTree[V]) prependChildren(fromNode *Node[V], toNode *Node[V]) {
 func (tree *BPlusTree[V]) appendChildren(fromNode *Node[V], toNode *Node[V]) {
 	toNode.Children = append(toNode.Children, fromNode.Children...)
 	setParent(fromNode.Children, toNode)
+}
+
+// String returns a string representation of container (for debugging purposes)
+func (tree *BPlusTree[V]) String() string {
+	var buffer bytes.Buffer
+	buffer.WriteString("BPlusTree\n")
+	if !tree.Empty() {
+		tree.output(&buffer, tree.Root, 0, true)
+	}
+	return buffer.String()
+}
+
+func (tree *BPlusTree[V]) output(buffer *bytes.Buffer, node *Node[V], level int, isTail bool) {
+	for e := 0; e < len(node.Key)+1; e++ {
+		if e < len(node.Children) {
+			tree.output(buffer, node.Children[e], level+1, true)
+		}
+		if e < len(node.Key) {
+			buffer.WriteString(strings.Repeat("    ", level))
+			buffer.WriteString(fmt.Sprintf("%v", *node.Key[e]) + "\n")
+		}
+	}
 }
 
 func (node *Node[V]) deleteKey(index int) {
@@ -550,9 +618,15 @@ func findNodePosition[V Value](childrens []*Node[V], node *Node[V]) (index int, 
 }
 
 func getMaxKey[V Value](keys []*V) *V {
-	return keys[len(keys)-1]
+	if len(keys) > 0 {
+		return keys[len(keys)-1]
+	}
+	return nil
 }
 
 func getRecordsMaxKey[V Value](records []*Record[V]) *V {
-	return records[len(records)-1].Key
+	if len(records) > 0 {
+		return records[len(records)-1].Key
+	}
+	return nil
 }
