@@ -6,7 +6,7 @@ import (
 )
 
 func TestBTree_Put(t *testing.T) {
-	tree := NewWith[int32](4, utils.IntComparator[int32])
+	tree := NewWith[int32](3, utils.IntComparator[int32])
 
 	tree.Put(0, 0)
 	tree.Put(1, 1)
@@ -31,6 +31,23 @@ func TestBTree_Put(t *testing.T) {
 	tree.Put(19, 19)
 	tree.Put(20, 20)
 	tree.Put(21, 21)
+
+	t.Log(tree.String())
+
+	tree.Remove(20)
+	t.Log(tree.String())
+	tree.Remove(11)
+	t.Log(tree.String())
+	tree.Remove(12)
+	t.Log(tree.String())
+	tree.Remove(6)
+	t.Log(tree.String())
+	tree.Remove(9)
+	t.Log(tree.String())
+	tree.Remove(8)
+	t.Log(tree.String())
+	tree.Remove(0)
+	t.Log(tree.String())
 }
 
 func BenchmarkPut(b *testing.B) {

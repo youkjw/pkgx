@@ -1,7 +1,10 @@
 package btree
 
 import (
+	"bytes"
+	"fmt"
 	"pkgx/utils"
+	"strings"
 	"time"
 )
 
@@ -275,7 +278,7 @@ func (tree *BTree[V]) delete(node *Node[V], index int) {
 	node.Entries[index] = leftLargestNode.Entries[leftLatgeEntryIndex] // 将叶子节点的元素提上来
 	deletedKey := leftLargestNode.Entries[leftLatgeEntryIndex].Key     // 删除掉叶子节点对应的元素
 	tree.deleteEntry(leftLargestNode, leftLatgeEntryIndex)
-	tree.rebalance(node, deletedKey)
+	tree.rebalance(leftLargestNode, deletedKey)
 }
 
 func (tree *BTree[V]) deleteEntry(node *Node[V], index int) {
@@ -309,7 +312,7 @@ func (tree *BTree[V]) rebalance(node *Node[V], deletedKey V) {
 	if leftSibling != nil && len(leftSibling.Entries) > tree.minEntries() {
 		// rotate right
 		node.Entries = append([]*Entry[V]{node.Parent.Entries[leftSiblingIndex]}, node.Entries...) // 将父节点的节点减1(子节点比关键字多1)对应的关键要到当前调整节点最左边，向左兄弟节点借比当前关键字都小
-		node.Parent.Entries[leftSiblingIndex] = leftSibling.Entries[len(leftSibling.Entries)-1]    // 父节点原来位置则从右兄弟节点最后的关键字提上去
+		node.Parent.Entries[leftSiblingIndex] = leftSibling.Entries[len(leftSibling.Entries)-1]    // 父节点原来位置则从左兄弟节点最后的关键字提上去
 		tree.deleteEntry(leftSibling, len(leftSibling.Entries)-1)                                  // 删除掉左兄弟节点最后的关键字
 		if !tree.isLeaf(leftSibling) {                                                             // 左兄弟节点非叶子节点
 			leftSiblingRightMostChild := leftSibling.Children[len(leftSibling.Children)-1] // 由于左兄弟节点借走了一个关键字, 左兄弟节点原来关键字右边的子节点需要调整
@@ -428,6 +431,28 @@ func (tree *BTree[V]) prependChildren(fromNode *Node[V], toNode *Node[V]) {
 func (tree *BTree[V]) appendChildren(fromNode *Node[V], toNode *Node[V]) {
 	toNode.Children = append(toNode.Children, fromNode.Children...)
 	setParent(fromNode.Children, toNode)
+}
+
+// String returns a string representation of container (for debugging purposes)
+func (tree *BTree[V]) String() string {
+	var buffer bytes.Buffer
+	buffer.WriteString("BTree\n")
+	if !tree.Empty() {
+		tree.output(&buffer, tree.Root, 0, true)
+	}
+	return buffer.String()
+}
+
+func (tree *BTree[V]) output(buffer *bytes.Buffer, node *Node[V], level int, isTail bool) {
+	for e := 0; e < len(node.Entries)+1; e++ {
+		if e < len(node.Children) {
+			tree.output(buffer, node.Children[e], level+1, true)
+		}
+		if e < len(node.Entries) {
+			buffer.WriteString(strings.Repeat("    ", level))
+			buffer.WriteString(fmt.Sprintf("%v", node.Entries[e].Key) + "\n")
+		}
+	}
 }
 
 func setParent[V Value](childrens []*Node[V], parent *Node[V]) {
