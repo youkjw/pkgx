@@ -52,11 +52,17 @@ func BenchmarkPut(b *testing.B) {
 	//mux := sync.Mutex{}
 	tree := NewWith[int](3, utils.IntComparator[int])
 	//tree.Put(1, 1)
-	b.RunParallel(func(pb *testing.PB) {
-		for pb.Next() {
-			//mux.Lock()
-			tree.Remove(1)
-			//mux.Unlock()
-		}
-	})
+	//b.RunParallel(func(pb *testing.PB) {
+	//	for pb.Next() {
+	//		//mux.Lock()
+	//		tree.Remove(1)
+	//		//mux.Unlock()
+	//	}
+	//})
+
+	for i := 1; i < 100; i++ {
+		go func() {
+			tree.Put(i, i)
+		}()
+	}
 }
