@@ -49,17 +49,23 @@ func TestNewWith(t *testing.T) {
 	//t.Log(tree.String())
 
 	var wg = sync.WaitGroup{}
-	wg.Add(100)
+	wg.Add(200)
 	for i := 0; i < 100; i++ {
 		ni := i
 		go func() {
 			tree.Put(ni, ni)
 			wg.Done()
 		}()
+		go func() {
+			//if ni%2 == 0 {
+			tree.Remove(ni)
+			//}
+			wg.Done()
+		}()
 	}
 	wg.Wait()
 
-	t.Log(tree.String())
+	//t.Log(tree.String())
 }
 
 func BenchmarkPut(b *testing.B) {
@@ -69,6 +75,7 @@ func BenchmarkPut(b *testing.B) {
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			//mux.Lock()
+			tree.Put(1, 1)
 			tree.Remove(1)
 			//mux.Unlock()
 		}

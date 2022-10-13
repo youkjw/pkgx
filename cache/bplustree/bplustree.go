@@ -9,8 +9,6 @@ import (
 	"time"
 )
 
-var mu sync.RWMutex
-
 // Value 可以比较的value, 可以对比排序
 type Value interface {
 	string | utils.Number | time.Time
@@ -73,6 +71,8 @@ func (tree *BPlusTree[V]) Put(key V, value any) {
 }
 
 func (tree *BPlusTree[V]) Get(key V) (value any, found bool) {
+	tree.RLock()
+	defer tree.RUnlock()
 	if tree.Empty() {
 		return nil, false
 	}
@@ -97,6 +97,8 @@ func (tree *BPlusTree[V]) Range(key V, size int) (value []any) {
 }
 
 func (tree *BPlusTree[V]) Remove(key V) (value any, found bool) {
+	tree.Lock()
+	defer tree.Unlock()
 	if tree.Empty() {
 		return nil, false
 	}
@@ -172,6 +174,9 @@ func (tree *BPlusTree[V]) insertIntoInternal(node *Node[V], record *Record[V]) b
 	if insertPosition >= len(node.Key) {
 		insertPosition--
 	}
+	if insertPosition >= len(node.Children) {
+		fmt.Println(tree.String())
+	}
 	return tree.insert(node.Children[insertPosition], record)
 }
 
@@ -219,18 +224,19 @@ func (tree *BPlusTree[V]) delete(node *Node[V], index int) (value any) {
 		// 删除key
 		key := node.Key[index]
 		node.deleteKey(index)
-		// 获取剩下key的最大值
-		maxKey := getMaxKey(node.Key)
+		if node.Parent != nil {
+			// 获取剩下key的最大值
+			maxKey := getMaxKey(node.Key)
+			if maxKey != nil {
+				// 修改非叶子节点上的最大key
+				tree.replaceParentKeyRecursively(node.Parent, node, key, maxKey)
+			}
+		}
 
 		// 删除records
 		leaf := node.Leaf
 		value = leaf.Records[index]
 		leaf.deleteRecord(index)
-
-		if maxKey != nil {
-			// 修改非叶子节点上的最大key
-			tree.replaceParentKeyRecursively(node.Parent, node, key, maxKey)
-		}
 		// 重新平衡
 		tree.rebalance(node, key)
 	}
@@ -262,6 +268,7 @@ func (tree *BPlusTree[V]) rebalance(node *Node[V], deletedKey *V) {
 			leaf.Records = append([]*Record[V]{leftSiblingRightMostRecords}, leaf.Records...) // 左兄弟叶子节点最后一个records调整到当前叶子节点的最左边
 			siblingLeaf.deleteRecord(len(siblingLeaf.Records) - 1)                            // 删除左兄弟叶子节点最后一个records
 		}
+		return
 	}
 
 	// 尝试向右节点借
@@ -283,6 +290,7 @@ func (tree *BPlusTree[V]) rebalance(node *Node[V], deletedKey *V) {
 			leaf.Records = append(leaf.Records, rightSiblingLeftMostRecords)               // 右兄弟叶子节点最后一个records调整到当前叶子节点的最右边
 			siblingLeaf.deleteRecord(len(siblingLeaf.Records) - 1)                         // 删除右兄弟叶子节点最后一个records
 		}
+		return
 	}
 
 	// 左右兄弟关键字都不富有(子节点大于m/2), 就合并关键字
@@ -291,9 +299,9 @@ func (tree *BPlusTree[V]) rebalance(node *Node[V], deletedKey *V) {
 		parent := node.Parent
 		node.Key = append(node.Key, rightSibling.Key...)
 		deletedKey = parent.Key[rightSiblingIndex-1]
-		parent.deleteKey(rightSiblingIndex - 1)                       // 删除掉当前节点对应父节点位置-1的关键字
-		tree.appendChildren(parent.Children[rightSiblingIndex], node) // 向右合并，将当前节点的子节点和右兄弟节点的子节点合并，
-		parent.deleteChild(rightSiblingIndex)                         // 删除掉当前节对应父节点的右兄弟节点
+		parent.deleteKey(rightSiblingIndex - 1) // 删除掉当前节点对应父节点位置-1的关键字
+		tree.appendChildren(rightSibling, node) // 向右合并，将当前节点的子节点和右兄弟节点的子节点合并，
+		parent.deleteChild(rightSiblingIndex)   // 删除掉当前节对应父节点的右兄弟节点
 		// 合并后调整非叶子节点的关键字
 		maxKey := getMaxKey(node.Key)
 		if maxKey != nil {
@@ -314,7 +322,7 @@ func (tree *BPlusTree[V]) rebalance(node *Node[V], deletedKey *V) {
 		node.Key = append(leftSibling.Key, node.Key...)
 		deletedKey = parent.Key[leftSiblingIndex]
 		parent.deleteKey(leftSiblingIndex)
-		tree.prependChildren(parent.Children[leftSiblingIndex], node)
+		tree.prependChildren(leftSibling, node)
 		parent.deleteChild(leftSiblingIndex)
 		// 合并后调整非叶子节点的关键字
 		maxKey := getMaxKey(node.Key)
@@ -487,9 +495,6 @@ func (tree *BPlusTree[V]) shouldSplitChild(node *Node[V]) bool {
 }
 
 func (tree *BPlusTree[V]) appendKey(node *Node[V], key *V) {
-	if node == nil {
-		fmt.Println(node)
-	}
 	position, found := tree.searchNode(node, key)
 	if !found {
 		node.Key = append(node.Key, nil)
