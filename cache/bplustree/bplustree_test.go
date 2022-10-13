@@ -1,6 +1,8 @@
 package bplustree
 
 import (
+	"fmt"
+	"math/rand"
 	"pkgx/utils"
 	"sync"
 	"testing"
@@ -55,23 +57,87 @@ func TestNewWith(t *testing.T) {
 	//t.Log(tree.String())
 
 	var wg = sync.WaitGroup{}
-	wg.Add(200)
-	for i := 0; i < 100; i++ {
+	wg.Add(20)
+	for i := 0; i < 20; i++ {
 		ni := i
 		go func() {
+			fmt.Println(ni)
 			tree.Put(ni, ni)
 			wg.Done()
 		}()
+		//go func() {
+		//	//if ni%2 == 0 {
+		//	tree.Remove(ni)
+		//	//}
+		//	wg.Done()
+		//}()
+	}
+	wg.Wait()
+
+	t.Log(tree.String())
+
+	wg.Add(20)
+	for i := 0; i < 20; i++ {
+		ni := i
 		go func() {
-			//if ni%2 == 0 {
-			tree.Remove(ni)
-			//}
+			if rand.Intn(10) > 4 {
+				fmt.Println(ni)
+				tree.Remove(ni)
+			}
 			wg.Done()
 		}()
 	}
 	wg.Wait()
 
 	t.Log(tree.String())
+}
+
+func TestDebug(t *testing.T) {
+	tree := NewWith[int](3, utils.IntComparator[int])
+	tree.Put(10, 10)
+	tree.Put(2, 2)
+	tree.Put(19, 19)
+	tree.Put(0, 0)
+	tree.Put(3, 3)
+	tree.Put(15, 15)
+	tree.Put(1, 1)
+	tree.Put(4, 4)
+	tree.Put(5, 5)
+	tree.Put(17, 17)
+	tree.Put(6, 6)
+	tree.Put(14, 14)
+	tree.Put(7, 7)
+	tree.Put(12, 12)
+	tree.Put(16, 16)
+	tree.Put(9, 9)
+	tree.Put(8, 8)
+	tree.Put(13, 13)
+	tree.Put(18, 18)
+	tree.Put(11, 11)
+
+	fmt.Println(tree.String())
+	tree.Remove(0)
+	fmt.Println(tree.String())
+	tree.Remove(19)
+	fmt.Println(tree.String())
+	tree.Remove(1)
+	fmt.Println(tree.String())
+	tree.Remove(4)
+	fmt.Println(tree.String())
+	tree.Remove(17)
+	fmt.Println(tree.String())
+	tree.Remove(15)
+	fmt.Println(tree.String())
+	tree.Remove(18)
+	fmt.Println(tree.String())
+	tree.Remove(8)
+	fmt.Println(tree.String())
+	tree.Remove(10)
+	fmt.Println(tree.String())
+	tree.Remove(2)
+	fmt.Println(tree.String())
+	tree.Remove(14)
+	fmt.Println(tree.String())
 }
 
 func BenchmarkPut(b *testing.B) {

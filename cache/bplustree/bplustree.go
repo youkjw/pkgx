@@ -125,8 +125,9 @@ func (tree *BPlusTree[V]) searchRecursively(startNode *Node[V], key *V) (node *N
 			return node, index, found
 		}
 
-		index, found = tree.searchNode(node, key)
-		if index >= len(node.Key) {
+		var over bool
+		index, found, over = tree.searchNode(node, key)
+		if over {
 			index--
 		}
 		node = node.Children[index]
@@ -169,15 +170,15 @@ func (tree *BPlusTree[V]) insertIntoLeaf(node *Node[V], record *Record[V]) bool 
 }
 
 func (tree *BPlusTree[V]) insertIntoInternal(node *Node[V], record *Record[V]) bool {
-	insertPosition, _ := tree.searchNode(node, record.Key)
-	// 非叶子节点需要往下找插入点, 插入的key比当前节点最大值还大，非叶子节点时未找到对应关键字时会返回多一个偏移值
-	if insertPosition >= len(node.Key) {
+	insertPosition, _, over := tree.searchNode(node, record.Key)
+	if over {
+		// 超出范围往前取最后一个
 		insertPosition--
 	}
 	return tree.insert(node.Children[insertPosition], record)
 }
 
-func (tree *BPlusTree[V]) searchNode(node *Node[V], key *V) (index int, found bool) {
+func (tree *BPlusTree[V]) searchNode(node *Node[V], key *V) (index int, found bool, over bool) {
 	low, high := 0, len(node.Key)-1
 	var mid int
 	for low <= high {
@@ -189,11 +190,15 @@ func (tree *BPlusTree[V]) searchNode(node *Node[V], key *V) (index int, found bo
 		case compare < 0:
 			high = mid - 1
 		case compare == 0:
-			return mid, true
+			return mid, true, false
 		}
 	}
-
-	return low, false
+	// 超出切片范围
+	// 查找的key比当前节点key最大值还大，未找到对应索引index时会返回多一个偏移值
+	if low == len(node.Key) {
+		over = true
+	}
+	return low, false, over
 }
 
 func (tree *BPlusTree[V]) searchLeaf(leaf *Leaf[V], key *V) (index int, found bool) {
@@ -221,6 +226,12 @@ func (tree *BPlusTree[V]) delete(node *Node[V], index int) (value any) {
 		// 删除key
 		key := node.Key[index]
 		node.deleteKey(index)
+
+		// 删除records
+		leaf := node.Leaf
+		value = leaf.Records[index]
+		leaf.deleteRecord(index)
+
 		if node.Parent != nil {
 			// 获取剩下key的最大值
 			maxKey := getMaxKey(node.Key)
@@ -228,26 +239,21 @@ func (tree *BPlusTree[V]) delete(node *Node[V], index int) (value any) {
 				// 修改非叶子节点上的最大key
 				tree.replaceParentKeyRecursively(node.Parent, node, key, maxKey)
 			}
+			// 重新平衡
+			tree.rebalance(node, maxKey)
 		}
-
-		// 删除records
-		leaf := node.Leaf
-		value = leaf.Records[index]
-		leaf.deleteRecord(index)
-		// 重新平衡
-		tree.rebalance(node, key)
 	}
 	return
 }
 
-func (tree *BPlusTree[V]) rebalance(node *Node[V], deletedKey *V) {
+func (tree *BPlusTree[V]) rebalance(node *Node[V], balanceKey *V) {
 	// 检查是否需要重新平衡, 当节点key小于子节点需要重新平衡元素
 	if node == nil || len(node.Key) >= tree.minKey() {
 		return
 	}
 
 	// 尝试向左节点借
-	leftSibling, leftSiblingIndex := tree.leftSibling(node, deletedKey)
+	leftSibling, leftSiblingIndex := tree.leftSibling(node, balanceKey)
 	if leftSibling != nil && len(leftSibling.Key) > tree.minKey() {
 		parent := node.Parent
 		node.Key = append([]*V{leftSibling.Key[len(leftSibling.Key)-1]}, node.Key...) // 将父节点的节点对应的关键要到当前调整节点最左边，向左兄弟节点借比当前关键字都小
@@ -269,7 +275,7 @@ func (tree *BPlusTree[V]) rebalance(node *Node[V], deletedKey *V) {
 	}
 
 	// 尝试向右节点借
-	rightSibling, rightSiblingIndex := tree.rightSibling(node, deletedKey)
+	rightSibling, rightSiblingIndex := tree.rightSibling(node, balanceKey)
 	if rightSibling != nil && len(rightSibling.Key) > tree.minKey() {
 		parent := node.Parent
 		node.Key = append(node.Key, rightSibling.Key[0]) // 将父节点的节点对应的关键要到当前调整节点最右边，向右兄弟节点借比当前关键字都大
@@ -294,19 +300,20 @@ func (tree *BPlusTree[V]) rebalance(node *Node[V], deletedKey *V) {
 		return
 	}
 
+	var maxKey *V
 	// 左右兄弟关键字都不富有(子节点大于m/2), 就合并关键字
 	if rightSibling != nil {
 		// 存在右兄弟节点，但右兄弟节点不富有，合并 [当前节点所有关键字]、[当前节点对应父节点位置-1的关键字]、[右节点的所有关键字]
 		parent := node.Parent
 		node.Key = append(node.Key, rightSibling.Key...)
-		deletedKey = parent.Key[rightSiblingIndex-1]
+		balanceKey = parent.Key[rightSiblingIndex-1]
 		parent.deleteKey(rightSiblingIndex - 1) // 删除掉右兄弟节点对应父节点位置-1的关键字
 		tree.appendChildren(rightSibling, node) // 向左合并，将当前节点的子节点和右兄弟节点的子节点合并，
 		parent.deleteChild(rightSiblingIndex)   // 删除掉当前节对应父节点的右兄弟节点
 		// 合并后调整父节点、祖先节点的关键字
-		maxKey := getMaxKey(node.Key)
+		maxKey = getMaxKey(node.Key)
 		if maxKey != nil {
-			tree.replaceParentKeyRecursively(parent, node, deletedKey, maxKey)
+			tree.replaceParentKeyRecursively(parent, node, balanceKey, maxKey)
 		}
 
 		if node.isLeafNote() {
@@ -321,14 +328,14 @@ func (tree *BPlusTree[V]) rebalance(node *Node[V], deletedKey *V) {
 
 		// merge with left sibling
 		node.Key = append(leftSibling.Key, node.Key...)
-		deletedKey = parent.Key[leftSiblingIndex]
+		balanceKey = parent.Key[leftSiblingIndex]
 		parent.deleteKey(leftSiblingIndex)
 		tree.prependChildren(leftSibling, node)
 		parent.deleteChild(leftSiblingIndex)
 		// 合并后调整父节点、祖先节点的关键字
-		maxKey := getMaxKey(node.Key)
+		maxKey = getMaxKey(node.Key)
 		if maxKey != nil {
-			tree.replaceParentKeyRecursively(parent, node, deletedKey, maxKey)
+			tree.replaceParentKeyRecursively(parent, node, balanceKey, maxKey)
 		}
 
 		if node.isLeafNote() {
@@ -342,15 +349,13 @@ func (tree *BPlusTree[V]) rebalance(node *Node[V], deletedKey *V) {
 
 	// 当前调整节点的父节点是根节点并且根节点没有关键字, 则将当前节点提升为根节点
 	if node.Parent == tree.Root && len(tree.Root.Key) == 0 {
-		tree.Lock()
 		tree.Root = node
 		node.Parent = nil
-		tree.Unlock()
 		return
 	}
 
 	// 由于父节点经过调整，不确定是否仍然富有，在以父节点为调整节点做平衡
-	tree.rebalance(node.Parent, deletedKey)
+	tree.rebalance(node.Parent, maxKey)
 }
 
 func (tree *BPlusTree[V]) minChildren() int {
@@ -477,8 +482,8 @@ func (tree *BPlusTree[V]) splitNonRoot(node *Node[V]) {
 	tree.appendKey(parent, getMaxKey(left.Key))
 	tree.appendKey(parent, getMaxKey(right.Key))
 
-	insertPosition, _ := tree.searchNode(parent, getMaxKey(left.Key))
-	if insertPosition >= len(parent.Key) {
+	insertPosition, _, over := tree.searchNode(parent, getMaxKey(left.Key))
+	if over {
 		insertPosition--
 	}
 	parent.Children = append(parent.Children, nil)
@@ -499,9 +504,9 @@ func (tree *BPlusTree[V]) shouldSplitChild(node *Node[V]) bool {
 }
 
 func (tree *BPlusTree[V]) appendKey(node *Node[V], key *V) {
-	position, found := tree.searchNode(node, key)
+	position, found, over := tree.searchNode(node, key)
 	if !found {
-		if position >= len(node.Key) {
+		if over {
 			position--
 		}
 		node.Key = append(node.Key, nil)
@@ -532,10 +537,7 @@ func (tree *BPlusTree[V]) replaceParentKeyRecursively(parent *Node[V], node *Nod
 
 func (tree *BPlusTree[V]) leftSibling(node *Node[V], Key *V) (*Node[V], int) {
 	if node.Parent != nil {
-		index, _ := tree.searchNode(node.Parent, Key)
-		if index >= len(node.Parent.Key) {
-			index--
-		}
+		index, _, _ := tree.searchNode(node.Parent, Key)
 		index--
 		if index >= 0 && index < len(node.Parent.Children) {
 			return node.Parent.Children[index], index
@@ -546,10 +548,7 @@ func (tree *BPlusTree[V]) leftSibling(node *Node[V], Key *V) (*Node[V], int) {
 
 func (tree *BPlusTree[V]) rightSibling(node *Node[V], Key *V) (*Node[V], int) {
 	if node.Parent != nil {
-		index, _ := tree.searchNode(node.Parent, Key)
-		if index >= len(node.Parent.Key) {
-			index--
-		}
+		index, _, _ := tree.searchNode(node.Parent, Key)
 		index++
 		if index >= 0 && index < len(node.Parent.Children) {
 			return node.Parent.Children[index], index
