@@ -174,9 +174,6 @@ func (tree *BPlusTree[V]) insertIntoInternal(node *Node[V], record *Record[V]) b
 	if insertPosition >= len(node.Key) {
 		insertPosition--
 	}
-	if insertPosition >= len(node.Children) {
-		fmt.Println(tree.String())
-	}
 	return tree.insert(node.Children[insertPosition], record)
 }
 
@@ -253,10 +250,10 @@ func (tree *BPlusTree[V]) rebalance(node *Node[V], deletedKey *V) {
 	leftSibling, leftSiblingIndex := tree.leftSibling(node, deletedKey)
 	if leftSibling != nil && len(leftSibling.Key) > tree.minKey() {
 		parent := node.Parent
-		node.Key = append([]*V{parent.Key[leftSiblingIndex]}, node.Key...)     // 将父节点的节点对应的关键要到当前调整节点最左边，向左兄弟节点借比当前关键字都小
-		leftSibling.deleteKey(len(leftSibling.Key) - 1)                        // 先删除掉左兄弟节点最后的关键字
-		parent.Key[leftSiblingIndex] = leftSibling.Key[len(leftSibling.Key)-1] // 父节点原来位置则从左兄弟节点最后的关键字提上去
-		if !leftSibling.isLeafNote() {                                         // 左兄弟节点非叶子节点
+		node.Key = append([]*V{leftSibling.Key[len(leftSibling.Key)-1]}, node.Key...) // 将父节点的节点对应的关键要到当前调整节点最左边，向左兄弟节点借比当前关键字都小
+		leftSibling.deleteKey(len(leftSibling.Key) - 1)                               // 先删除掉左兄弟节点最后的关键字
+		parent.Key[leftSiblingIndex] = leftSibling.Key[len(leftSibling.Key)-1]        // 父节点原来位置则从左兄弟节点最后的关键字提上去
+		if !leftSibling.isLeafNote() {                                                // 左兄弟节点非叶子节点
 			leftSiblingRightMostChild := leftSibling.Children[len(leftSibling.Children)-1] // 由于左兄弟节点借走了一个关键字, 左兄弟节点原来关键字右边的子节点需要调整
 			leftSiblingRightMostChild.Parent = node
 			node.Children = append([]*Node[V]{leftSiblingRightMostChild}, node.Children...) // 左兄弟节点原来关键字右边的子节点直接给当前调整节点的最左边
@@ -275,9 +272,8 @@ func (tree *BPlusTree[V]) rebalance(node *Node[V], deletedKey *V) {
 	rightSibling, rightSiblingIndex := tree.rightSibling(node, deletedKey)
 	if rightSibling != nil && len(rightSibling.Key) > tree.minKey() {
 		parent := node.Parent
-		node.Key = append(node.Key, parent.Key[rightSiblingIndex]) // 将父节点的节点对应的关键要到当前调整节点最右边，向右兄弟节点借比当前关键字都大
-		rightSibling.deleteKey(0)                                  // 先删除掉左兄弟节点首个的关键字
-		parent.Key[rightSiblingIndex] = rightSibling.Key[0]        // 父节点原来位置则从右兄弟节点最后的关键字提上去
+		node.Key = append(node.Key, rightSibling.Key[0]) // 将父节点的节点对应的关键要到当前调整节点最右边，向右兄弟节点借比当前关键字都大
+		rightSibling.deleteKey(0)                        // 先删除掉左兄弟节点首个的关键字
 		if !rightSibling.isLeafNote() {
 			rightSiblingLeftMostChild := rightSibling.Children[0]
 			rightSiblingLeftMostChild.Parent = node
@@ -290,6 +286,11 @@ func (tree *BPlusTree[V]) rebalance(node *Node[V], deletedKey *V) {
 			leaf.Records = append(leaf.Records, rightSiblingLeftMostRecords)               // 右兄弟叶子节点最后一个records调整到当前叶子节点的最右边
 			siblingLeaf.deleteRecord(len(siblingLeaf.Records) - 1)                         // 删除右兄弟叶子节点最后一个records
 		}
+		// 合并后调整父节点、祖先节点的关键字
+		maxKey := getMaxKey(node.Key)
+		if maxKey != nil {
+			tree.setParentKeyRecursively(parent, node, maxKey)
+		}
 		return
 	}
 
@@ -299,10 +300,10 @@ func (tree *BPlusTree[V]) rebalance(node *Node[V], deletedKey *V) {
 		parent := node.Parent
 		node.Key = append(node.Key, rightSibling.Key...)
 		deletedKey = parent.Key[rightSiblingIndex-1]
-		parent.deleteKey(rightSiblingIndex - 1) // 删除掉当前节点对应父节点位置-1的关键字
-		tree.appendChildren(rightSibling, node) // 向右合并，将当前节点的子节点和右兄弟节点的子节点合并，
+		parent.deleteKey(rightSiblingIndex - 1) // 删除掉右兄弟节点对应父节点位置-1的关键字
+		tree.appendChildren(rightSibling, node) // 向左合并，将当前节点的子节点和右兄弟节点的子节点合并，
 		parent.deleteChild(rightSiblingIndex)   // 删除掉当前节对应父节点的右兄弟节点
-		// 合并后调整非叶子节点的关键字
+		// 合并后调整父节点、祖先节点的关键字
 		maxKey := getMaxKey(node.Key)
 		if maxKey != nil {
 			tree.replaceParentKeyRecursively(parent, node, deletedKey, maxKey)
@@ -324,7 +325,7 @@ func (tree *BPlusTree[V]) rebalance(node *Node[V], deletedKey *V) {
 		parent.deleteKey(leftSiblingIndex)
 		tree.prependChildren(leftSibling, node)
 		parent.deleteChild(leftSiblingIndex)
-		// 合并后调整非叶子节点的关键字
+		// 合并后调整父节点、祖先节点的关键字
 		maxKey := getMaxKey(node.Key)
 		if maxKey != nil {
 			tree.replaceParentKeyRecursively(parent, node, deletedKey, maxKey)
@@ -353,7 +354,7 @@ func (tree *BPlusTree[V]) rebalance(node *Node[V], deletedKey *V) {
 }
 
 func (tree *BPlusTree[V]) minChildren() int {
-	return tree.maxDegree / 2 //节点数量范围 (m/2向上取整 - m)
+	return (tree.maxDegree + 1) / 2 //节点数量范围 (m/2向上取整 - m)
 }
 
 // 获取树的最大层级
@@ -477,6 +478,9 @@ func (tree *BPlusTree[V]) splitNonRoot(node *Node[V]) {
 	tree.appendKey(parent, getMaxKey(right.Key))
 
 	insertPosition, _ := tree.searchNode(parent, getMaxKey(left.Key))
+	if insertPosition >= len(parent.Key) {
+		insertPosition--
+	}
 	parent.Children = append(parent.Children, nil)
 	copy(parent.Children[insertPosition+1:], parent.Children[insertPosition:])
 	parent.Children[insertPosition] = left
@@ -497,6 +501,9 @@ func (tree *BPlusTree[V]) shouldSplitChild(node *Node[V]) bool {
 func (tree *BPlusTree[V]) appendKey(node *Node[V], key *V) {
 	position, found := tree.searchNode(node, key)
 	if !found {
+		if position >= len(node.Key) {
+			position--
+		}
 		node.Key = append(node.Key, nil)
 		copy(node.Key[position+1:], node.Key[position:])
 		node.Key[position] = key
@@ -526,6 +533,9 @@ func (tree *BPlusTree[V]) replaceParentKeyRecursively(parent *Node[V], node *Nod
 func (tree *BPlusTree[V]) leftSibling(node *Node[V], Key *V) (*Node[V], int) {
 	if node.Parent != nil {
 		index, _ := tree.searchNode(node.Parent, Key)
+		if index >= len(node.Parent.Key) {
+			index--
+		}
 		index--
 		if index >= 0 && index < len(node.Parent.Children) {
 			return node.Parent.Children[index], index
@@ -537,6 +547,9 @@ func (tree *BPlusTree[V]) leftSibling(node *Node[V], Key *V) (*Node[V], int) {
 func (tree *BPlusTree[V]) rightSibling(node *Node[V], Key *V) (*Node[V], int) {
 	if node.Parent != nil {
 		index, _ := tree.searchNode(node.Parent, Key)
+		if index >= len(node.Parent.Key) {
+			index--
+		}
 		index++
 		if index >= 0 && index < len(node.Parent.Children) {
 			return node.Parent.Children[index], index

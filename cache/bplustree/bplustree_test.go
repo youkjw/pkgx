@@ -40,11 +40,17 @@ func TestNewWith(t *testing.T) {
 	//tree.Remove(20)
 	//t.Log(tree.String())
 	//tree.Remove(11)
+	//t.Log(tree.String())
 	//tree.Remove(12)
+	//t.Log(tree.String())
 	//tree.Remove(26)
+	//t.Log(tree.String())
 	//tree.Remove(1)
+	//t.Log(tree.String())
 	//tree.Remove(0)
+	//t.Log(tree.String())
 	//tree.Remove(27)
+	//t.Log(tree.String())
 	//tree.Remove(9)
 	//t.Log(tree.String())
 
@@ -65,7 +71,7 @@ func TestNewWith(t *testing.T) {
 	}
 	wg.Wait()
 
-	//t.Log(tree.String())
+	t.Log(tree.String())
 }
 
 func BenchmarkPut(b *testing.B) {
