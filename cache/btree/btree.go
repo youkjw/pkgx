@@ -71,7 +71,7 @@ func (tree *BTree[V]) insertIntoLeaf(node *Node[V], entry *Entry[V]) bool {
 		return false
 	}
 	node.Entries = append(node.Entries, nil)
-	copy(node.Entries[:insertPositon], node.Entries[insertPositon+1:])
+	copy(node.Entries[insertPositon+1:], node.Entries[insertPositon:])
 	node.Entries[insertPositon] = entry
 	tree.split(node)
 	return true

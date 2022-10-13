@@ -9,6 +9,8 @@ import (
 	"time"
 )
 
+var mu sync.RWMutex
+
 // Value 可以比较的value, 可以对比排序
 type Value interface {
 	string | utils.Number | time.Time
@@ -40,7 +42,6 @@ type Leaf[V Value] struct {
 
 	Prev *Leaf[V] //前项叶子地址
 	Next *Leaf[V] //后项叶子地址
-	sync.RWMutex
 }
 
 type Record[V Value] struct {
@@ -57,21 +58,18 @@ func NewWith[V Value](maxDegree int, comparator utils.Comparator[V]) *BPlusTree[
 
 func (tree *BPlusTree[V]) Put(key V, value any) {
 	record := &Record[V]{Key: &key, Value: value}
+	tree.Lock()
 	if tree.Root == nil {
-		tree.Lock()
-		if tree.Root != nil {
-			tree.Unlock()
-			goto INSERT
-		}
 		tree.Root = &Node[V]{Key: []*V{&key}, Children: []*Node[V]{}, Leaf: &Leaf[V]{Records: []*Record[V]{record}}, isLeaf: true}
 		tree.size++
 		tree.Unlock()
 		return
 	}
-INSERT:
+
 	if tree.insert(tree.Root, record) {
 		tree.size++
 	}
+	tree.Unlock()
 }
 
 func (tree *BPlusTree[V]) Get(key V) (value any, found bool) {
@@ -141,30 +139,23 @@ func (tree *BPlusTree[V]) insert(node *Node[V], record *Record[V]) (inserted boo
 }
 
 func (tree *BPlusTree[V]) insertIntoLeaf(node *Node[V], record *Record[V]) bool {
-	insertPosition, found := tree.searchLeaf(node.Leaf, record.Key)
+	leaf := node.Leaf
+	insertPosition, found := tree.searchLeaf(leaf, record.Key)
 	if found {
 		//update
-		leaf := node.Leaf
-		leaf.Lock()
-		node.Leaf.Records[insertPosition] = record
-		leaf.Unlock()
+		leaf.Records[insertPosition] = record
 		return false
 	}
 
-	// 写入叶子节点records
-	leaf := node.Leaf
-	leaf.Lock()
-	leaf.Records = append(leaf.Records, nil)
-	copy(leaf.Records[:insertPosition], leaf.Records[insertPosition+1:])
-	leaf.Records[insertPosition] = record
-	leaf.Unlock()
-
 	// 增加叶子节点的key
-	node.Lock()
 	node.Key = append(node.Key, nil)
-	copy(node.Key[:insertPosition], node.Key[insertPosition+1:])
+	copy(node.Key[insertPosition+1:], node.Key[insertPosition:])
 	node.Key[insertPosition] = record.Key
-	node.Unlock()
+
+	// 写入叶子节点records
+	leaf.Records = append(leaf.Records, nil)
+	copy(leaf.Records[insertPosition+1:], leaf.Records[insertPosition:])
+	leaf.Records[insertPosition] = record
 
 	// 设置parent的key
 	if node.Parent != nil {
@@ -177,19 +168,14 @@ func (tree *BPlusTree[V]) insertIntoLeaf(node *Node[V], record *Record[V]) bool 
 
 func (tree *BPlusTree[V]) insertIntoInternal(node *Node[V], record *Record[V]) bool {
 	insertPosition, _ := tree.searchNode(node, record.Key)
-	if !node.isLeafNote() {
-		// 非叶子节点需要往下找插入点, 插入的key比当前节点最大值还大，非叶子节点时未找到对应关键字时会返回多一个偏移值
-		if insertPosition >= len(node.Key) {
-			insertPosition--
-		}
-		tree.insert(node.Children[insertPosition], record)
+	// 非叶子节点需要往下找插入点, 插入的key比当前节点最大值还大，非叶子节点时未找到对应关键字时会返回多一个偏移值
+	if insertPosition >= len(node.Key) {
+		insertPosition--
 	}
-	return true
+	return tree.insert(node.Children[insertPosition], record)
 }
 
 func (tree *BPlusTree[V]) searchNode(node *Node[V], key *V) (index int, found bool) {
-	node.RLock()
-	defer node.RUnlock()
 	low, high := 0, len(node.Key)-1
 	var mid int
 	for low <= high {
@@ -211,8 +197,6 @@ func (tree *BPlusTree[V]) searchNode(node *Node[V], key *V) (index int, found bo
 func (tree *BPlusTree[V]) searchLeaf(leaf *Leaf[V], key *V) (index int, found bool) {
 	low, high := 0, len(leaf.Records)-1
 	var mid int
-	leaf.RLock()
-	defer leaf.RUnlock()
 	for low <= high {
 		mid = (low + high) / 2
 		compare := tree.Comparator(*key, *leaf.Records[mid].Key)
@@ -233,19 +217,15 @@ func (tree *BPlusTree[V]) delete(node *Node[V], index int) (value any) {
 	// 从叶子节点开始删除
 	if node.isLeafNote() {
 		// 删除key
-		node.Lock()
 		key := node.Key[index]
 		node.deleteKey(index)
 		// 获取剩下key的最大值
 		maxKey := getMaxKey(node.Key)
-		node.Unlock()
 
 		// 删除records
 		leaf := node.Leaf
-		leaf.Lock()
 		value = leaf.Records[index]
 		leaf.deleteRecord(index)
-		leaf.Unlock()
 
 		if maxKey != nil {
 			// 修改非叶子节点上的最大key
@@ -267,90 +247,55 @@ func (tree *BPlusTree[V]) rebalance(node *Node[V], deletedKey *V) {
 	leftSibling, leftSiblingIndex := tree.leftSibling(node, deletedKey)
 	if leftSibling != nil && len(leftSibling.Key) > tree.minKey() {
 		parent := node.Parent
-
-		node.Lock()
-		parent.Lock()
-		leftSibling.Lock()
-
 		node.Key = append([]*V{parent.Key[leftSiblingIndex]}, node.Key...)     // 将父节点的节点对应的关键要到当前调整节点最左边，向左兄弟节点借比当前关键字都小
 		leftSibling.deleteKey(len(leftSibling.Key) - 1)                        // 先删除掉左兄弟节点最后的关键字
 		parent.Key[leftSiblingIndex] = leftSibling.Key[len(leftSibling.Key)-1] // 父节点原来位置则从左兄弟节点最后的关键字提上去
 		if !leftSibling.isLeafNote() {                                         // 左兄弟节点非叶子节点
 			leftSiblingRightMostChild := leftSibling.Children[len(leftSibling.Children)-1] // 由于左兄弟节点借走了一个关键字, 左兄弟节点原来关键字右边的子节点需要调整
-			leftSiblingRightMostChild.Lock()
 			leftSiblingRightMostChild.Parent = node
-			leftSiblingRightMostChild.Unlock()
 			node.Children = append([]*Node[V]{leftSiblingRightMostChild}, node.Children...) // 左兄弟节点原来关键字右边的子节点直接给当前调整节点的最左边
 			leftSibling.deleteChild(len(leftSibling.Children) - 1)                          // 然后删除左兄弟节点原来关键字右边的子节点
 		} else { // 左兄弟节点是叶子节点
-			leaf := node.Leaf               // 当前调整叶子节点
-			siblingLeaf := leftSibling.Leaf // 左兄弟叶子节点
-			leaf.Lock()
-			siblingLeaf.Lock()
+			leaf := node.Leaf                                                                 // 当前调整叶子节点
+			siblingLeaf := leftSibling.Leaf                                                   // 左兄弟叶子节点
 			leftSiblingRightMostRecords := siblingLeaf.Records[len(siblingLeaf.Records)-1]    // 左兄弟叶子节点最后一个records
 			leaf.Records = append([]*Record[V]{leftSiblingRightMostRecords}, leaf.Records...) // 左兄弟叶子节点最后一个records调整到当前叶子节点的最左边
 			siblingLeaf.deleteRecord(len(siblingLeaf.Records) - 1)                            // 删除左兄弟叶子节点最后一个records
-			leaf.Unlock()
-			siblingLeaf.Unlock()
 		}
-
-		node.Unlock()
-		parent.Unlock()
-		leftSibling.Unlock()
 	}
 
 	// 尝试向右节点借
 	rightSibling, rightSiblingIndex := tree.rightSibling(node, deletedKey)
 	if rightSibling != nil && len(rightSibling.Key) > tree.minKey() {
 		parent := node.Parent
-
-		node.Lock()
-		parent.Lock()
-		leftSibling.Lock()
-
-		node.Key = append(node.Key, node.Parent.Key[rightSiblingIndex]) // 将父节点的节点对应的关键要到当前调整节点最右边，向右兄弟节点借比当前关键字都大
-		rightSibling.deleteKey(0)                                       // 先删除掉左兄弟节点首个的关键字
-		node.Parent.Key[rightSiblingIndex] = rightSibling.Key[0]        // 父节点原来位置则从右兄弟节点最后的关键字提上去
+		node.Key = append(node.Key, parent.Key[rightSiblingIndex]) // 将父节点的节点对应的关键要到当前调整节点最右边，向右兄弟节点借比当前关键字都大
+		rightSibling.deleteKey(0)                                  // 先删除掉左兄弟节点首个的关键字
+		parent.Key[rightSiblingIndex] = rightSibling.Key[0]        // 父节点原来位置则从右兄弟节点最后的关键字提上去
 		if !rightSibling.isLeafNote() {
 			rightSiblingLeftMostChild := rightSibling.Children[0]
 			rightSiblingLeftMostChild.Parent = node
 			node.Children = append(node.Children, rightSiblingLeftMostChild)
 			rightSibling.deleteChild(0)
 		} else { // 右兄弟节点是叶子节点
-			leaf := node.Leaf                // 当前调整叶子节点
-			siblingLeaf := rightSibling.Leaf // 右兄弟叶子节点
-			leaf.Lock()
-			siblingLeaf.Lock()
+			leaf := node.Leaf                                                              // 当前调整叶子节点
+			siblingLeaf := rightSibling.Leaf                                               // 右兄弟叶子节点
 			rightSiblingLeftMostRecords := siblingLeaf.Records[len(siblingLeaf.Records)-1] // 右兄弟叶子节点最后一个records
 			leaf.Records = append(leaf.Records, rightSiblingLeftMostRecords)               // 右兄弟叶子节点最后一个records调整到当前叶子节点的最右边
 			siblingLeaf.deleteRecord(len(siblingLeaf.Records) - 1)                         // 删除右兄弟叶子节点最后一个records
-			leaf.Unlock()
-			siblingLeaf.Unlock()
 		}
-
-		node.Unlock()
-		parent.Unlock()
-		leftSibling.Unlock()
 	}
 
 	// 左右兄弟关键字都不富有(子节点大于m/2), 就合并关键字
 	if rightSibling != nil {
 		// 存在右兄弟节点，但右兄弟节点不富有，合并 [当前节点所有关键字]、[当前节点对应父节点位置-1的关键字]、[右节点的所有关键字]
 		parent := node.Parent
-		node.Lock()
-		parent.Lock()
-
 		node.Key = append(node.Key, rightSibling.Key...)
-		deletedKey = node.Parent.Key[rightSiblingIndex-1]
+		deletedKey = parent.Key[rightSiblingIndex-1]
 		parent.deleteKey(rightSiblingIndex - 1)                       // 删除掉当前节点对应父节点位置-1的关键字
 		tree.appendChildren(parent.Children[rightSiblingIndex], node) // 向右合并，将当前节点的子节点和右兄弟节点的子节点合并，
 		parent.deleteChild(rightSiblingIndex)                         // 删除掉当前节对应父节点的右兄弟节点
 		// 合并后调整非叶子节点的关键字
 		maxKey := getMaxKey(node.Key)
-
-		node.Unlock()
-		parent.Unlock()
-
 		if maxKey != nil {
 			tree.replaceParentKeyRecursively(parent, node, deletedKey, maxKey)
 		}
@@ -359,19 +304,11 @@ func (tree *BPlusTree[V]) rebalance(node *Node[V], deletedKey *V) {
 			// 叶子节点调整leaf
 			leaf := node.Leaf
 			rightSiblingLeaf := rightSibling.Leaf
-			leaf.Lock()
-			rightSiblingLeaf.Lock()
-
 			leaf.Records = append(leaf.Records, rightSiblingLeaf.Records...)
 			leaf.Next = rightSiblingLeaf.Next
-
-			leaf.Unlock()
-			rightSiblingLeaf.Unlock()
 		}
 	} else if leftSibling != nil {
 		parent := node.Parent
-		node.Lock()
-		parent.Lock()
 
 		// merge with left sibling
 		node.Key = append(leftSibling.Key, node.Key...)
@@ -381,10 +318,6 @@ func (tree *BPlusTree[V]) rebalance(node *Node[V], deletedKey *V) {
 		parent.deleteChild(leftSiblingIndex)
 		// 合并后调整非叶子节点的关键字
 		maxKey := getMaxKey(node.Key)
-
-		node.Unlock()
-		parent.Unlock()
-
 		if maxKey != nil {
 			tree.replaceParentKeyRecursively(parent, node, deletedKey, maxKey)
 		}
@@ -393,14 +326,8 @@ func (tree *BPlusTree[V]) rebalance(node *Node[V], deletedKey *V) {
 			// 叶子节点调整leaf
 			leaf := node.Leaf
 			leftSiblingLeaf := leftSibling.Leaf
-			leaf.Lock()
-			leftSiblingLeaf.Lock()
-
 			leaf.Records = append(leftSiblingLeaf.Records, leaf.Records...)
 			leaf.Prev = leftSiblingLeaf.Prev
-
-			leaf.Unlock()
-			leftSiblingLeaf.Unlock()
 		}
 	}
 
@@ -408,9 +335,7 @@ func (tree *BPlusTree[V]) rebalance(node *Node[V], deletedKey *V) {
 	if node.Parent == tree.Root && len(tree.Root.Key) == 0 {
 		tree.Lock()
 		tree.Root = node
-		node.Lock()
 		node.Parent = nil
-		node.Unlock()
 		tree.Unlock()
 		return
 	}
@@ -466,6 +391,7 @@ func (tree *BPlusTree[V]) split(node *Node[V]) {
 	}
 
 	tree.splitNonRoot(node)
+	return
 }
 
 func (tree *BPlusTree[V]) splitRoot() {
@@ -477,16 +403,16 @@ func (tree *BPlusTree[V]) splitRoot() {
 	// 根节点是叶子节点
 	if node.isLeafNote() {
 		leaf := node.Leaf
-		leaf.RLock()
 		leftLeaf := &Leaf[V]{Records: append([]*Record[V](nil), leaf.Records[:middle+1]...), Prev: node.Leaf.Prev}
 		rightLeaf := &Leaf[V]{Records: append([]*Record[V](nil), leaf.Records[middle+1:]...), Prev: leftLeaf, Next: node.Leaf.Next}
-		leaf.RUnlock()
 		leftLeaf.Next = rightLeaf
 		tree.appendKey(node, getRecordsMaxKey(leftLeaf.Records))
 		tree.appendKey(node, getRecordsMaxKey(rightLeaf.Records))
 
+		left.Parent = node
 		left.isLeaf = true
 		left.Leaf = leftLeaf
+		right.Parent = node
 		right.isLeaf = true
 		right.Leaf = rightLeaf
 	} else {
@@ -521,10 +447,8 @@ func (tree *BPlusTree[V]) splitNonRoot(node *Node[V]) {
 	// 叶子节点
 	if node.isLeafNote() {
 		leaf := node.Leaf
-		leaf.RLock()
 		leftLeaf := &Leaf[V]{Records: append([]*Record[V](nil), leaf.Records[:middle+1]...), Prev: node.Leaf.Prev}
 		rightLeaf := &Leaf[V]{Records: append([]*Record[V](nil), leaf.Records[middle+1:]...), Prev: leftLeaf, Next: node.Leaf.Next}
-		leaf.RUnlock()
 		leftLeaf.Next = rightLeaf
 
 		left.isLeaf = true
@@ -551,37 +475,33 @@ func (tree *BPlusTree[V]) splitNonRoot(node *Node[V]) {
 	parent.Children[insertPosition+1] = right
 
 	tree.split(parent)
+	return
 }
 
 func (tree *BPlusTree[V]) shouldSplitLeaf(node *Node[V]) bool {
-	node.RLock()
-	defer node.RUnlock()
 	return len(node.Key) > tree.maxKey()
 }
 
 func (tree *BPlusTree[V]) shouldSplitChild(node *Node[V]) bool {
-	node.RLock()
-	defer node.RUnlock()
 	return len(node.Children) > tree.maxChildren()
 }
 
 func (tree *BPlusTree[V]) appendKey(node *Node[V], key *V) {
+	if node == nil {
+		fmt.Println(node)
+	}
 	position, found := tree.searchNode(node, key)
 	if !found {
-		node.Lock()
 		node.Key = append(node.Key, nil)
 		copy(node.Key[position+1:], node.Key[position:])
 		node.Key[position] = key
-		node.Unlock()
 	}
 }
 
 func (tree *BPlusTree[V]) setParentKeyRecursively(parent *Node[V], node *Node[V], key *V) {
 	insertPosition, found := findNodePosition(parent, node)
 	if found && tree.Comparator(*parent.Key[insertPosition], *key) < 0 {
-		parent.Lock()
 		parent.Key[insertPosition] = key
-		parent.Unlock()
 		if parent.Parent != nil {
 			tree.setParentKeyRecursively(parent.Parent, parent, key)
 		}
@@ -591,9 +511,7 @@ func (tree *BPlusTree[V]) setParentKeyRecursively(parent *Node[V], node *Node[V]
 func (tree *BPlusTree[V]) replaceParentKeyRecursively(parent *Node[V], node *Node[V], oldKey *V, newKey *V) {
 	insertPosition, found := findNodePosition(parent, node)
 	if found && tree.Comparator(*parent.Key[insertPosition], *oldKey) == 0 {
-		parent.Lock()
 		parent.Key[insertPosition] = newKey
-		parent.Unlock()
 		if parent.Parent != nil {
 			tree.replaceParentKeyRecursively(parent.Parent, parent, oldKey, newKey)
 		}
@@ -656,8 +574,6 @@ func (tree *BPlusTree[V]) output(buffer *bytes.Buffer, node *Node[V], level int,
 }
 
 func (node *Node[V]) isLeafNote() bool {
-	node.RLock()
-	defer node.RUnlock()
 	return node.isLeaf
 }
 
@@ -692,15 +608,11 @@ func (leaf *Leaf[V]) deleteRecord(index int) {
 
 func setParent[V Value](nodes []*Node[V], parent *Node[V]) {
 	for _, node := range nodes {
-		node.Lock()
 		node.Parent = parent
-		node.Unlock()
 	}
 }
 
 func findNodePosition[V Value](parent *Node[V], node *Node[V]) (index int, found bool) {
-	parent.RLock()
-	defer parent.RUnlock()
 	for sindex, snode := range parent.Children {
 		if snode == node {
 			return sindex, true
