@@ -2,7 +2,6 @@ package bplustree
 
 import (
 	"fmt"
-	"math/rand"
 	"pkgx/utils"
 	"sync"
 	"testing"
@@ -57,31 +56,15 @@ func TestNewWith(t *testing.T) {
 	//t.Log(tree.String())
 
 	var wg = sync.WaitGroup{}
-	wg.Add(20)
-	for i := 0; i < 20; i++ {
+	wg.Add(400)
+	for i := 0; i < 200; i++ {
 		ni := i
 		go func() {
-			fmt.Println(ni)
 			tree.Put(ni, ni)
 			wg.Done()
 		}()
-		//go func() {
-		//	//if ni%2 == 0 {
-		//	tree.Remove(ni)
-		//	//}
-		//	wg.Done()
-		//}()
-	}
-	wg.Wait()
-
-	t.Log(tree.String())
-
-	wg.Add(20)
-	for i := 0; i < 20; i++ {
-		ni := i
 		go func() {
-			if rand.Intn(10) > 4 {
-				fmt.Println(ni)
+			if ni%2 == 0 {
 				tree.Remove(ni)
 			}
 			wg.Done()
@@ -90,6 +73,20 @@ func TestNewWith(t *testing.T) {
 	wg.Wait()
 
 	t.Log(tree.String())
+
+	//wg.Add(200)
+	//for i := 0; i < 200; i++ {
+	//	ni := i
+	//	go func() {
+	//		if rand.Intn(10) > 4 {
+	//			tree.Remove(ni)
+	//		}
+	//		wg.Done()
+	//	}()
+	//}
+	//wg.Wait()
+
+	//t.Log(tree.String())
 }
 
 func TestDebug(t *testing.T) {
@@ -148,7 +145,7 @@ func BenchmarkPut(b *testing.B) {
 		for pb.Next() {
 			//mux.Lock()
 			tree.Put(1, 1)
-			tree.Remove(1)
+			//tree.Remove(1)
 			//mux.Unlock()
 		}
 	})
