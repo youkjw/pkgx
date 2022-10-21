@@ -32,7 +32,6 @@ type Node[V Value] struct {
 	Leaf *Leaf[V]
 	// 是否是叶子节点
 	isLeaf bool
-	sync.RWMutex
 }
 
 type Leaf[V Value] struct {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"pkgx/utils"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -24,6 +25,7 @@ type BTree[V Value] struct {
 	Comparator utils.Comparator[V] //用作对比排序
 	size       int                 //存储values的数量
 	m          int                 //子节点数，非叶子结点最多只有M个儿子，,最少有m/2个节点,根结点的儿子数为[2, M]
+	sync.RWMutex
 }
 
 type Node[V Value] struct {
@@ -46,15 +48,18 @@ func NewWith[V Value](m int, comparator utils.Comparator[V]) *BTree[V] {
 
 func (tree *BTree[V]) Put(key V, value any) {
 	entry := &Entry[V]{Key: key, Value: value}
+	tree.Lock()
 	if tree.Root == nil {
 		tree.Root = &Node[V]{Entries: []*Entry[V]{entry}, Children: []*Node[V]{}}
 		tree.size++
+		tree.Unlock()
 		return
 	}
 
 	if tree.insert(tree.Root, entry) {
 		tree.size++
 	}
+	tree.Unlock()
 }
 
 func (tree *BTree[V]) insert(node *Node[V], entry *Entry[V]) bool {
@@ -119,6 +124,8 @@ func (tree *BTree[V]) search(node *Node[V], key V) (index int, found bool) {
 }
 
 func (tree *BTree[V]) Get(key V) (value any, found bool) {
+	tree.RLock()
+	defer tree.RUnlock()
 	node, index, found := tree.searchRecursively(tree.Root, key)
 	if found {
 		return node.Entries[index].Value, true
