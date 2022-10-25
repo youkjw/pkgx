@@ -2,11 +2,14 @@ package timingwheel
 
 import (
 	"container/list"
+	"errors"
 	"sync"
 	"time"
 )
 
 const worker = 8
+
+var ErrNotRunning = errors.New("TimingWheel is NotRunning")
 
 type Execute[V any] func(key V, value any)
 
@@ -19,8 +22,11 @@ type TimingWheel[V any] struct {
 	numSlots       int           // 时间轮budget数
 	execute        Execute[V]
 	setChannel     chan *timingEntry[V]
+	removeChannel  chan V
 	runningChannel chan *timingEntry[V]
+	stopChannel    chan bool
 	taskPosition   sync.Map
+	running        bool
 }
 
 type timingEntry[V any] struct {
@@ -41,7 +47,7 @@ type positionEntry[V any] struct {
 	item *timingEntry[V]
 }
 
-func NewTimingWheel[V any](interval time.Duration, numSlots int, execute Execute[V]) {
+func NewTimingWheel[V any](interval time.Duration, numSlots int, execute Execute[V]) *TimingWheel[V] {
 	tw := &TimingWheel[V]{
 		interval:       interval,
 		timer:          time.NewTicker(interval),
@@ -50,11 +56,15 @@ func NewTimingWheel[V any](interval time.Duration, numSlots int, execute Execute
 		slots:          make([]*list.List, numSlots),
 		execute:        execute,
 		setChannel:     make(chan *timingEntry[V]),
-		runningChannel: make(chan *timingEntry[V]),
+		removeChannel:  make(chan V),
+		runningChannel: make(chan *timingEntry[V], worker),
+		stopChannel:    make(chan bool),
 	}
 
 	tw.initSlots()
 	go tw.run()
+	tw.running = true
+	return tw
 }
 
 func (tw *TimingWheel[V]) initSlots() {
@@ -63,12 +73,12 @@ func (tw *TimingWheel[V]) initSlots() {
 	}
 }
 
-func (tw *TimingWheel[V]) setTimer(key V, value any, delay time.Duration) error {
-	if delay < tw.interval {
-		delay = tw.interval
+func (tw *TimingWheel[V]) SetTimer(key V, value any, delay time.Duration) error {
+	if !tw.running {
+		return ErrNotRunning
 	}
 
-	tw.setChannel <- &timingEntry[V]{
+	task := &timingEntry[V]{
 		baseEntry: baseEntry[V]{
 			nt:    time.Duration(time.Now().Unix()),
 			delay: delay,
@@ -76,22 +86,67 @@ func (tw *TimingWheel[V]) setTimer(key V, value any, delay time.Duration) error 
 		},
 		value: value,
 	}
+
+	if delay < tw.interval {
+		tw.push(task)
+		return nil
+	}
+
+	tw.setChannel <- task
+	return nil
+}
+
+func (tw *TimingWheel[V]) RemoveTimer(key V) error {
+	if !tw.running {
+		return ErrNotRunning
+	}
+
+	tw.removeChannel <- key
 	return nil
 }
 
 func (tw *TimingWheel[V]) run() {
+	tw.workerStart()
 	for {
 		select {
 		case <-tw.timer.C:
 			tw.onTick()
 		case task := <-tw.setChannel:
 			tw.setTask(task)
+		case key := <-tw.removeChannel:
+			tw.removeTask(key)
+		case <-tw.stopChannel:
+			tw.timer.Stop()
 		}
 	}
 }
 
 func (tw *TimingWheel[V]) onTick() {
-	tw.tickedPos = tw.tickedPos % tw.numSlots
+	tw.tickedPos = (tw.tickedPos + 1) % tw.numSlots
+	l := tw.slots[tw.tickedPos]
+	tw.scanAndRunTasks(l)
+}
+
+func (tw *TimingWheel[V]) scanAndRunTasks(list *list.List) {
+	for e := list.Front(); e != nil; {
+		task := e.Value.(*timingEntry[V])
+		if task.removed {
+			next := e.Next()
+			list.Remove(e)
+			e = next
+			continue
+		} else if task.circle > 0 {
+			task.circle--
+			e = e.Next()
+			continue
+		}
+
+		tw.push(task)
+		next := e.Next()
+		list.Remove(e)
+		tw.taskPosition.Delete(task.key)
+		e = next
+	}
 }
 
 func (tw *TimingWheel[V]) setTask(task *timingEntry[V]) {
@@ -115,7 +170,7 @@ func (tw *TimingWheel[V]) moveTask(base baseEntry[V]) {
 
 	timer := val.(*positionEntry[V])
 	if base.delay < tw.interval {
-		tw.exec(timer.item.key, timer.item.value)
+		//tw.exec(timer.item.key, timer.item.value)
 	}
 
 	pos, circle := tw.getPositionAndCircle(base.delay)
@@ -133,11 +188,35 @@ func (tw *TimingWheel[V]) moveTask(base baseEntry[V]) {
 	}
 }
 
-func (tw *TimingWheel[V]) exec(key V, value any) {
-	go func() {
-		tw.execute(key, value)
-	}()
-	return
+func (tw *TimingWheel[V]) push(task *timingEntry[V]) {
+	tw.runningChannel <- task
+}
+
+func (tw *TimingWheel[V]) workerStart() {
+	for i := 0; i < worker; i++ {
+		go func() {
+			for {
+				select {
+				case task := <-tw.runningChannel:
+					go func() {
+						tw.execute(task.key, task.value)
+					}()
+				}
+
+			}
+		}()
+	}
+}
+
+func (tw *TimingWheel[V]) removeTask(key V) {
+	val, ok := tw.taskPosition.Load(key)
+	if !ok {
+		return
+	}
+
+	timer := val.(*positionEntry[V])
+	timer.item.removed = true
+	tw.taskPosition.Delete(key)
 }
 
 func (tw *TimingWheel[V]) setTimerPosition(pos int, task *timingEntry[V]) {
@@ -158,4 +237,9 @@ func (tw *TimingWheel[V]) getPositionAndCircle(d time.Duration) (pos, circle int
 	pos = (tw.tickedPos + steps) % tw.numSlots
 	circle = (tw.tickedPos + steps) / tw.numSlots
 	return
+}
+
+func (tw *TimingWheel[V]) Close() {
+	tw.stopChannel <- true
+	tw.running = false
 }
