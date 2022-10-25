@@ -37,9 +37,9 @@ type timingEntry[V any] struct {
 }
 
 type baseEntry[V any] struct {
-	nt    time.Duration
-	delay time.Duration // 延迟时间
-	key   V
+	baseTime time.Duration
+	delay    time.Duration // 延迟时间
+	key      V
 }
 
 type positionEntry[V any] struct {
@@ -80,9 +80,9 @@ func (tw *TimingWheel[V]) SetTimer(key V, value any, delay time.Duration) error 
 
 	task := &timingEntry[V]{
 		baseEntry: baseEntry[V]{
-			nt:    time.Duration(time.Now().Unix()),
-			delay: delay,
-			key:   key,
+			baseTime: time.Duration(time.Now().Nanosecond()),
+			delay:    delay,
+			key:      key,
 		},
 		value: value,
 	}
@@ -135,12 +135,14 @@ func (tw *TimingWheel[V]) scanAndRunTasks(list *list.List) {
 			list.Remove(e)
 			e = next
 			continue
+		} else if time.Now().After(time.Unix(0, task.baseTime.Nanoseconds()+task.delay.Nanoseconds())) {
+			goto RUN
 		} else if task.circle > 0 {
 			task.circle--
 			e = e.Next()
 			continue
 		}
-
+	RUN:
 		tw.push(task)
 		next := e.Next()
 		list.Remove(e)
