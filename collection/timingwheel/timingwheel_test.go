@@ -8,11 +8,11 @@ import (
 )
 
 func TestSetTask(t *testing.T) {
-	tm := NewTimingWheel[int](time.Second, 60, func(key int, value any) {
+	tm := NewTimingWheel[int, string](time.Second, 60, func(key int, value string) {
 		t.Log(fmt.Sprintf("key:%d value:%v", key, value))
 	})
-	for i := 0; i < 10000; i++ {
-		tm.SetTimer(i, i, time.Duration(rand.Intn(8))*time.Second)
+	for i := 0; i < 100; i++ {
+		tm.SetTimer(i, "a", time.Duration(rand.Intn(8))*time.Second)
 	}
 	time.Sleep(10 * time.Second)
 }
