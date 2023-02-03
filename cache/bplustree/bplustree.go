@@ -92,7 +92,24 @@ func (tree *BPlusTree[V]) Get(key V) (value any, found bool) {
 }
 
 func (tree *BPlusTree[V]) Range(key V, size int) (value []any) {
-	return nil
+	tree.Lock()
+	defer tree.Unlock()
+	if tree.Empty() {
+		return
+	}
+
+	// 查找node节点
+	node, _, found := tree.searchRecursively(tree.Root, &key)
+	if !found {
+		return
+	}
+
+	// 查找叶节点
+	index, found := tree.searchLeaf(node.Leaf, &key)
+	if found {
+		return node.Leaf.FindContinuousRecord(index, size)
+	}
+	return
 }
 
 func (tree *BPlusTree[V]) Remove(key V) (value any, found bool) {
@@ -490,7 +507,15 @@ func (tree *BPlusTree[V]) splitNonRoot(node *Node[V]) {
 	parent.Children[insertPosition] = left
 	parent.Children[insertPosition+1] = right
 
-	tree.split(parent)
+	// 更新原来左右叶子节点的指向
+	if node.Leaf.Prev != nil {
+		node.Leaf.Prev.updateNext(left.Leaf)
+	}
+
+	if node.Leaf.Next != nil {
+		node.Leaf.Next.updatePrev(right.Leaf)
+	}
+
 	return
 }
 
@@ -583,8 +608,20 @@ func (tree *BPlusTree[V]) output(buffer *bytes.Buffer, node *Node[V], level int,
 			tree.output(buffer, node.Children[e], level+1, true)
 		}
 		if e < len(node.Key) {
+			if e == 0 && node.isLeaf {
+				buffer.WriteString(strings.Repeat("    ", level))
+				buffer.WriteString(fmt.Sprintf("%p", node.Leaf.Prev) + "\n")
+			}
 			buffer.WriteString(strings.Repeat("    ", level))
-			buffer.WriteString(fmt.Sprintf("%v", *node.Key[e]) + "\n")
+			buffer.WriteString(fmt.Sprintf("%v", *node.Key[e]))
+			if node.isLeaf {
+				buffer.WriteString(fmt.Sprintf("|%p", node.Leaf))
+			}
+			buffer.WriteString("\n")
+			if e == len(node.Key)-1 && node.isLeaf {
+				buffer.WriteString(strings.Repeat("    ", level))
+				buffer.WriteString(fmt.Sprintf("%p", node.Leaf.Next) + "\n")
+			}
 		}
 	}
 }
@@ -612,6 +649,29 @@ func (node *Node[V]) deleteChild(index int) {
 	node.Children = node.Children[:len(node.Children)-1]
 }
 
+func (leaf *Leaf[V]) FindContinuousRecord(start int, size int) (value []any) {
+	l := leaf
+	index := start
+	for {
+		if len(value) >= size {
+			return
+		}
+
+		if len(l.Records) <= index {
+			// 下一个leaf节点
+			l = l.Next
+			if l == nil {
+				// 已经查找到最后一个元素
+				return
+			}
+			index = 0
+		}
+
+		value = append(value, l.Records[index].Value)
+		index++
+	}
+}
+
 func (leaf *Leaf[V]) deleteRecord(index int) {
 	if index >= len(leaf.Records) {
 		return
@@ -620,6 +680,14 @@ func (leaf *Leaf[V]) deleteRecord(index int) {
 	copy(leaf.Records[index:], leaf.Records[index+1:])
 	leaf.Records[len(leaf.Records)-1] = nil
 	leaf.Records = leaf.Records[:len(leaf.Records)-1]
+}
+
+func (leaf *Leaf[V]) updatePrev(l *Leaf[V]) {
+	leaf.Prev = l
+}
+
+func (leaf *Leaf[V]) updateNext(l *Leaf[V]) {
+	leaf.Next = l
 }
 
 func setParent[V Value](nodes []*Node[V], parent *Node[V]) {
