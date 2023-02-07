@@ -24,8 +24,71 @@ func NewTrieTree(replaceChar string) *TrieTree {
 	}
 }
 
-func (tree *TrieTree) Match() {
+func (tree *TrieTree) Match(text string) (sensitiveWords []string, replacedText string) {
+	if tree.root == nil {
+		return nil, text
+	}
 
+	// 过滤特殊字符
+	var (
+		ftext        = tree.FilterChar(text)
+		sensitiveMap = make(map[string]*struct{}) //利用map进行敏感词去重
+	)
+	stext := []rune(ftext)
+	for key, val := range stext {
+		trieNode := tree.root.findChild(val)
+		if trieNode == nil {
+			continue
+		}
+
+		// 匹配到首个敏感词
+		// 继续匹配后续的敏感词
+		for end := key + 1; trieNode != nil; end++ {
+			if trieNode.End {
+				// 匹配到完整敏感词
+				if _, ok := sensitiveMap[trieNode.Data]; !ok {
+					sensitiveWords = append(sensitiveWords, trieNode.Data)
+				}
+				sensitiveMap[trieNode.Data] = nil
+				tree.replaceRune(stext, key, end)
+			}
+			trieNode = trieNode.findChild(stext[end])
+		}
+	}
+
+	if len(sensitiveWords) > 0 {
+		// 有敏感词
+		replacedText = string(stext)
+	} else {
+		// 没有则返回原来的文本
+		replacedText = text
+	}
+
+	return
+}
+
+func (tree *TrieTree) replaceRune(r []rune, start int, end int) {
+	l := len(r)
+	for i := start; i < end; i++ {
+		for k, replaceRune := range tree.replaceChar {
+			i = i + k
+			end = end + k
+			if k == 0 {
+				r[i] = replaceRune
+			} else {
+				// 如果替换的index大于原来的总长度
+				// 往最后面添加
+				if i > l {
+					r = append(r, replaceRune)
+				} else {
+					// 否则往中间加
+					r = append(r[:i], replaceRune)
+					r = append(r, r[i:]...)
+				}
+			}
+		}
+
+	}
 }
 
 func (tree *TrieTree) AddWords(words []string) {
