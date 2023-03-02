@@ -1,7 +1,6 @@
 package trietree
 
 import (
-	"regexp"
 	"strings"
 )
 
@@ -20,7 +19,7 @@ type TrieNode struct {
 func NewTrieTree(replaceChar string) *TrieTree {
 	return &TrieTree{
 		replaceChar: []rune(replaceChar),
-		root:        nil,
+		root:        &TrieNode{},
 	}
 }
 
@@ -50,7 +49,7 @@ func (tree *TrieTree) Match(text string) (sensitiveWords []string, replacedText 
 					sensitiveWords = append(sensitiveWords, trieNode.Data)
 				}
 				sensitiveMap[trieNode.Data] = nil
-				tree.replaceRune(stext, key, end)
+				stext = tree.replaceRune(stext, key, end)
 			}
 			trieNode = trieNode.findChild(stext[end])
 		}
@@ -67,28 +66,19 @@ func (tree *TrieTree) Match(text string) (sensitiveWords []string, replacedText 
 	return
 }
 
-func (tree *TrieTree) replaceRune(r []rune, start int, end int) {
-	l := len(r)
-	for i := start; i < end; i++ {
-		for k, replaceRune := range tree.replaceChar {
-			i = i + k
-			end = end + k
-			if k == 0 {
-				r[i] = replaceRune
-			} else {
-				// 如果替换的index大于原来的总长度
-				// 往最后面添加
-				if i > l {
-					r = append(r, replaceRune)
-				} else {
-					// 否则往中间加
-					r = append(r[:i], replaceRune)
-					r = append(r, r[i:]...)
-				}
-			}
+func (tree *TrieTree) replaceRune(r []rune, start int, end int) (final []rune) {
+	rl := len(tree.replaceChar)
+	final = r
+	if rl == 1 {
+		for i := start; i < end; i++ {
+			final[i] = tree.replaceChar[0]
 		}
-
+	} else {
+		copy(final[start:], final[end+1:])
+		r = append(final[:start], tree.replaceChar...)
+		r = append(final, final[end+1:]...)
 	}
+	return
 }
 
 func (tree *TrieTree) AddWords(words []string) {
@@ -101,7 +91,11 @@ func (tree *TrieTree) AddWord(w string) {
 	word := tree.FilterChar(w)
 	var node *TrieNode
 	for _, r := range []rune(word) {
-		node = tree.root.addChild(r)
+		if node == nil {
+			node = tree.root.addChild(r)
+		} else {
+			node = node.addChild(r)
+		}
 	}
 	node.End = true
 	node.Data = w
@@ -109,10 +103,10 @@ func (tree *TrieTree) AddWord(w string) {
 
 func (tree *TrieTree) FilterChar(w string) string {
 	str := strings.ToLower(w)
-	str = strings.Replace(" ", "", str, -1)
-
-	regrep := regexp.MustCompile("[^\\u4e00-\\u9fa5a-zA-Z0-9]")
-	return regrep.ReplaceAllString(w, "")
+	str = strings.Replace(str, " ", "", -1)
+	return str
+	//regrep := regexp.MustCompile("[^\u4e00-\u9fa5a-zA-Z0-9]")
+	//return regrep.ReplaceAllString(w, "")
 }
 
 // addChild 新增子节点
