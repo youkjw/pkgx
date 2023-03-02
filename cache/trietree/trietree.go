@@ -70,13 +70,17 @@ func (tree *TrieTree) replaceRune(r []rune, start int, end int) (final []rune) {
 	rl := len(tree.replaceChar)
 	final = r
 	if rl == 1 {
+		// 单个的时候逐个替换
 		for i := start; i < end; i++ {
 			final[i] = tree.replaceChar[0]
 		}
 	} else {
-		copy(final[start:], final[end+1:])
-		r = append(final[:start], tree.replaceChar...)
-		r = append(final, final[end+1:]...)
+		// 多个的时候整个替换
+		var temp = make([]rune, len(final))
+		copy(temp, final)
+		copy(final[start:], temp[end:])
+		final = append(final[:start], tree.replaceChar...)
+		final = append(final, temp[end:]...)
 	}
 	return
 }
