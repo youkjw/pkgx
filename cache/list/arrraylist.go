@@ -15,7 +15,7 @@ type ArrayList[V comparable] struct {
 	size     int
 }
 
-func New[V]() *ArrayList[V] {
+func New[V comparable]() *ArrayList[V] {
 	size := defaultSize
 	list := &ArrayList[V]{
 		elements: make([]V, size, size),
@@ -33,8 +33,9 @@ func (list *ArrayList[V]) Add(values ...V) {
 }
 
 func (list *ArrayList[V]) Get(index int) (value V, found bool) {
+	var vNil V
 	if !list.withinRange(index) {
-		return nil, false
+		return vNil, false
 	}
 	return list.elements[index], true
 }
@@ -43,7 +44,8 @@ func (list *ArrayList[V]) Remove(index int) {
 	if !list.withinRange(index) {
 		return
 	}
-	list.elements[index] = nil
+	var vNil V
+	list.elements[index] = vNil
 	copy(list.elements[index:], list.elements[index+1:])
 	list.size--
 
@@ -157,7 +159,7 @@ func (list *ArrayList[V]) shrink() {
 }
 
 func (list *ArrayList[V]) resize(n int) {
-	newElements := make([]V, len(list.elements), n)
+	newElements := make([]V, n, n)
 	copy(newElements, list.elements)
 	list.elements = newElements
 }
