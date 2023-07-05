@@ -11,6 +11,7 @@ const (
 )
 
 type ArrayList[V comparable] struct {
+	Cursor   *Iterator[V]
 	elements []V
 	size     int
 }
@@ -22,6 +23,10 @@ func New[V comparable]() *ArrayList[V] {
 		size:     size,
 	}
 	return list
+}
+
+func (list *ArrayList[V]) Iterator() *Iterator[V] {
+	return &Iterator[V]{List: list, index: -1}
 }
 
 func (list *ArrayList[V]) Add(values ...V) {
