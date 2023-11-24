@@ -61,7 +61,7 @@ func GetString(node any) string {
 	case int32:
 		return strconv.Itoa(int(vt))
 	case int64:
-		return strconv.FormatInt(int64(vt), 10)
+		return strconv.FormatInt(vt, 10)
 	case string:
 		return vt
 	case uint:
@@ -73,7 +73,7 @@ func GetString(node any) string {
 	case uint32:
 		return strconv.FormatUint(uint64(vt), 10)
 	case uint64:
-		return strconv.FormatUint(uint64(vt), 10)
+		return strconv.FormatUint(vt, 10)
 	case []byte:
 		return string(vt)
 	case fmt.Stringer:
