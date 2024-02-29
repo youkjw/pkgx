@@ -39,14 +39,14 @@ func (list *ArrayList[V]) Add(values ...V) {
 
 func (list *ArrayList[V]) Get(index int) (value V, found bool) {
 	var vNil V
-	if !list.withinRange(index) {
+	if !list.WithinRange(index) {
 		return vNil, false
 	}
 	return list.elements[index], true
 }
 
 func (list *ArrayList[V]) Remove(index int) {
-	if !list.withinRange(index) {
+	if !list.WithinRange(index) {
 		return
 	}
 	var vNil V
@@ -101,7 +101,7 @@ func (list *ArrayList[V]) Clear() {
 	list.elements = make([]V, defaultSize, defaultSize)
 }
 
-func (list *ArrayList[V]) withinRange(index int) bool {
+func (list *ArrayList[V]) WithinRange(index int) bool {
 	return index >= 0 && index < list.size
 }
 
@@ -113,7 +113,7 @@ func (list *ArrayList[V]) Sort(comparable utils.Comparator[V]) {
 }
 
 func (list *ArrayList[V]) Swap(i, j int) bool {
-	if !list.withinRange(i) || !list.withinRange(j) {
+	if !list.WithinRange(i) || !list.WithinRange(j) {
 		return false
 	}
 	list.elements[i], list.elements[j] = list.elements[j], list.elements[i]
@@ -121,7 +121,7 @@ func (list *ArrayList[V]) Swap(i, j int) bool {
 }
 
 func (list *ArrayList[V]) Insert(index int, value V) {
-	if !list.withinRange(index) {
+	if !list.WithinRange(index) {
 		list.Add(value)
 		return
 	}
@@ -133,7 +133,7 @@ func (list *ArrayList[V]) Insert(index int, value V) {
 }
 
 func (list *ArrayList[V]) Set(index int, value V) {
-	if !list.withinRange(index) {
+	if !list.WithinRange(index) {
 		list.Add(value)
 		return
 	}
@@ -167,4 +167,8 @@ func (list *ArrayList[V]) resize(n int) {
 	newElements := make([]V, n, n)
 	copy(newElements, list.elements)
 	list.elements = newElements
+}
+
+func (list *ArrayList[V]) Value(index int) V {
+	return list.elements[index]
 }

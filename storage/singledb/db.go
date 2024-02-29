@@ -2,7 +2,7 @@ package singledb
 
 import "os"
 
-type Db struct {
+type DB struct {
 	path string
 	file *os.File
 	data *[maxDbSize]byte
@@ -10,4 +10,8 @@ type Db struct {
 	MmapFlags int
 	// truncate() and fsync() when growing the data file.
 	AllocSize int
+}
+
+func NewDB() *DB {
+	return &DB{}
 }

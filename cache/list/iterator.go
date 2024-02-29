@@ -1,8 +1,14 @@
 package list
 
+type DataTrait[V any] interface {
+	Size() int
+	Value(index int) V
+	WithinRange(int) bool
+}
+
 type Iterator[V comparable] struct {
 	Current V
-	List    *ArrayList[V]
+	List    DataTrait[V]
 	index   int
 }
 
@@ -11,7 +17,7 @@ func (i *Iterator[V]) Next() bool {
 		i.index++
 	}
 
-	return i.List.withinRange(i.index)
+	return i.List.WithinRange(i.index)
 }
 
 func (i *Iterator[V]) Prev() bool {
@@ -19,5 +25,13 @@ func (i *Iterator[V]) Prev() bool {
 		i.index--
 	}
 
-	return i.List.withinRange(i.index)
+	return i.List.WithinRange(i.index)
+}
+
+func (i *Iterator[V]) Index() int {
+	return i.index
+}
+
+func (i *Iterator[V]) Value() V {
+	return i.List.Value(i.Index())
 }
