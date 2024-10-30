@@ -1,6 +1,7 @@
 package list
 
 import (
+	"fmt"
 	"math/bits"
 	"math/rand"
 	"pkgx/utils"
@@ -22,6 +23,7 @@ type SkipList[V comparable] struct {
 type SkipListElement[V comparable] struct {
 	level int
 	key   V
+	value any
 	prev  *SkipListElement[V]
 	next  [maxLevel]*SkipListElement[V]
 }
@@ -35,7 +37,7 @@ func NewSkipList[V comparable](comparator utils.Comparator[V]) *SkipList[V] {
 	}
 }
 
-func (list *SkipList[V]) Insert(key V) {
+func (list *SkipList[V]) Insert(key V, value any) {
 	if list == nil {
 		return
 	}
@@ -50,6 +52,7 @@ func (list *SkipList[V]) Insert(key V) {
 	elem := &SkipListElement[V]{
 		level: level,
 		key:   key,
+		value: value,
 		next:  [maxLevel]*SkipListElement[V]{},
 	}
 
@@ -147,8 +150,25 @@ func (list *SkipList[V]) Insert(key V) {
 	}
 }
 
-func (list *SkipList[V]) Find() {
+func (list *SkipList[V]) Find(key V) (value any, ok bool) {
+	if list == nil {
+		return
+	}
 
+	return list.findRecursion(key)
+}
+
+func (list *SkipList[V]) findRecursion(key V) (value any, ok bool) {
+	if list == nil || list.Empty() {
+		return
+	}
+
+	//index := list.findEntryIndex(key, 0)
+	//var currentNode = list.start[index]
+
+	//if currentNode.key
+
+	return
 }
 
 func (list *SkipList[V]) Delete() {
@@ -159,18 +179,16 @@ func (list *SkipList[V]) Empty() bool {
 	return list.start[0] == nil
 }
 
+func (list *SkipList[V]) isEqual(key, nodeKey V) bool {
+	return list.comparator(key, nodeKey) == 0
+}
+
 func (list *SkipList[V]) isMin(key, nodeKey V) bool {
-	if list.comparator(key, nodeKey) > 0 {
-		return true
-	}
-	return false
+	return list.comparator(key, nodeKey) < 0
 }
 
 func (list *SkipList[V]) isMax(key, nodeKey V) bool {
-	if list.comparator(key, nodeKey) < 0 {
-		return true
-	}
-	return false
+	return list.comparator(key, nodeKey) > 0
 }
 
 func (list *SkipList[V]) generateLevel(maxLevel int) int {
@@ -190,4 +208,78 @@ func (list *SkipList[V]) findEntryIndex(key V, level int) int {
 		}
 	}
 	return 0
+}
+
+func (list *SkipList[V]) String() string {
+	s := ""
+
+	s += " --> "
+	for i, l := range list.start {
+		if l == nil {
+			break
+		}
+		if i > 0 {
+			s += " -> "
+		}
+		next := "---"
+		if l != nil {
+			next = fmt.Sprintf("%v", l.key)
+		}
+		s += fmt.Sprintf("[%v]", next)
+
+		if i == 0 {
+			s += "    "
+		}
+	}
+	s += "\n"
+
+	node := list.start[0]
+	for node != nil {
+		s += fmt.Sprintf("%v: ", node.value)
+		for i := 0; i <= node.level; i++ {
+
+			l := node.next[i]
+
+			next := "---"
+			if l != nil {
+				next = fmt.Sprintf("%v", l.key)
+			}
+
+			if i == 0 {
+				prev := "---"
+				if node.prev != nil {
+					prev = fmt.Sprintf("%v", node.prev.key)
+				}
+				s += fmt.Sprintf("[%v|%v]", prev, next)
+			} else {
+				s += fmt.Sprintf("[%v]", next)
+			}
+			if i < node.level {
+				s += " -> "
+			}
+
+		}
+		s += "\n"
+		node = node.next[0]
+	}
+
+	s += " --> "
+	for i, l := range list.end {
+		if l == nil {
+			break
+		}
+		if i > 0 {
+			s += " -> "
+		}
+		next := "---"
+		if l != nil {
+			next = fmt.Sprintf("%v", l.key)
+		}
+		s += fmt.Sprintf("[%v]", next)
+		if i == 0 {
+			s += "    "
+		}
+	}
+	s += "\n"
+	return s
 }
